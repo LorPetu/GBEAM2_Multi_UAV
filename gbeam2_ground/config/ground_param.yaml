@@ -1,0 +1,3 @@
+graph_draw:
+    ros__parameters:
+        scaling: 1.0

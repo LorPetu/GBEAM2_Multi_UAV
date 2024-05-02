@@ -1,0 +1,12 @@
+<launch>
+    <arg name="params_file" default="src/gbeam2_controller/config/global_param.yaml"/>
+
+    <node
+        pkg="gbeam2_controller"
+        exec="polytope_generation_node"
+        output="screen"
+        name="polytope_generation_node">
+
+        <param name="params-file" value="src/gbeam2_controller/config/global_param.yaml"/>
+    </node>
+</launch>

@@ -1,0 +1,8 @@
+pos_contr:
+  ros__parameters:
+     k_rho: 1.0
+     k_alpha: 1.2
+     alpha_thr: 0.2 
+     rho_thr: 0.02
+     yaw_max: 1.0
+     vel_max: 0.4

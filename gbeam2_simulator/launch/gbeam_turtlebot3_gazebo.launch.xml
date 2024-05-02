@@ -1,0 +1,10 @@
+<launch>
+
+    <include file="src/turtlebot3_simulations/turtlebot3_gazebo/launch/turtlebot3_dqn_stage4.launch.py"/>
+
+    <!-- <node pkg="turtlebot3_teleop" exec="teleop_keyboard" name="sim" namespace="turtlesim1" output="screen"/> -->
+
+     <node pkg="turtlesim" exec="turtle_teleop_key" output="screen" launch-prefix="xterm -e" />
+
+
+</launch>

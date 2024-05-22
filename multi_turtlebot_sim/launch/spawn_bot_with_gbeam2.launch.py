@@ -1,43 +1,13 @@
-# BSD 3-Clause License
-
-# Copyright (c) 2023, Franco Cipollone.
-# All rights reserved.
-
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are met:
-
-# * Redistributions of source code must retain the above copyright notice, this
-#   list of conditions and the following disclaimer.
-
-# * Redistributions in binary form must reproduce the above copyright notice,
-#   this list of conditions and the following disclaimer in the documentation
-#   and/or other materials provided with the distribution.
-
-# * Neither the name of the copyright holder nor the names of its
-#   contributors may be used to endorse or promote products derived from
-#   this software without specific prior written permission.
-
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument,IncludeLaunchDescription, GroupAction
 from launch.substitutions import Command
 from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PythonExpression
 from launch.substitutions import PathJoinSubstitution
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetRemap
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 import xacro
@@ -46,6 +16,9 @@ def generate_launch_description():
     # Launch configuration variables specific to simulation
     robot_prefix_arg = DeclareLaunchArgument('robot_prefix', default_value='')
     robot_prefix = LaunchConfiguration('robot_prefix')
+
+    lidar_height_arg = DeclareLaunchArgument('lidar_height', default_value='0.122')
+    lidar_height = LaunchConfiguration('lidar_height')
 
     use_sim_time_arg = DeclareLaunchArgument('use_sim_time', default_value='true', description='')
     use_sim_time = LaunchConfiguration('use_sim_time')
@@ -58,8 +31,8 @@ def generate_launch_description():
 
     # Obtain urdf from xacro files.
     multi_turtlebot_sim_pkg_dir = get_package_share_directory('multi_turtlebot_sim')
-    xacro_file_path = os.path.join(multi_turtlebot_sim_pkg_dir, 'urdf', 'turtlebot3_burger.urdf.xacro')
-    robot_desc = Command(['xacro ', str(xacro_file_path), ' frame_prefix:=', robot_prefix, ' topic_prefix:=', robot_prefix])
+    xacro_file_path = os.path.join(multi_turtlebot_sim_pkg_dir, 'urdf', 'turtlebot3_waffle.urdf.xacro')
+    robot_desc = Command(['xacro ', str(xacro_file_path), ' frame_prefix:=', robot_prefix, ' topic_prefix:=', robot_prefix, ' lidar_height_arg:=',lidar_height])
 
     # Robot state publisher
     # This node will take the urdf description and:
@@ -85,7 +58,7 @@ def generate_launch_description():
         package='gazebo_ros',
         executable='spawn_entity.py',
         arguments=[
-            '-entity', PathJoinSubstitution([robot_prefix, 'burger']),
+            '-entity', PathJoinSubstitution([robot_prefix, 'waffle']),
             '-topic', PathJoinSubstitution([robot_prefix, 'robot_description']),
             '-x', x_pose,
             '-y', y_pose,
@@ -94,15 +67,37 @@ def generate_launch_description():
         output='screen',
     )
 
+    # launch gbeam 2 os.path.join(get_package_share_directory('gbeam2_simulator'),'launch/ground_nodes.launch.py')
+
+    gbeam2_launch = GroupAction(
+        actions=[
+
+            SetRemap(src='/scan',dst= PythonExpression(["'/", LaunchConfiguration('robot_prefix'), "/scan'"])),
+
+            IncludeLaunchDescription(
+                 PythonLaunchDescriptionSource(os.path.join(get_package_share_directory('multi_turtlebot_sim'),
+                         'launch/gbeam2_sim_prefix.launch.py')),
+                 launch_arguments = {
+                       'robot_prefix' : robot_prefix
+
+                 }.items(),
+
+            )
+        ]
+    )
+
     ld = LaunchDescription()
 
     # Declare the launch options
     ld.add_action(x_pose_arg)
     ld.add_action(y_pose_arg)
+    ld.add_action(lidar_height_arg)
     ld.add_action(robot_prefix_arg)
     ld.add_action(use_sim_time_arg)
     ld.add_action(robot_state_publisher)
 
     ld.add_action(start_gazebo_ros_spawner_cmd)
+
+    ld.add_action(gbeam2_launch)
 
     return ld

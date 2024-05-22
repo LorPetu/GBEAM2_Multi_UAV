@@ -29,8 +29,8 @@ class PolyGenNode : public rclcpp::Node
 public:
   PolyGenNode() : Node("poly_gen")
   {
-    scan_subscriber_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-        "scan", 1, std::bind(&PolyGenNode::scanCallback, this, std::placeholders::_1)); //potremmo cambiarlo da std::placeholders::_1 --> _1
+    scan_subscriber_ = this->create_subscription<sensor_msgs::msg::LaserScan>("scan",
+     1, std::bind(&PolyGenNode::scanCallback, this, std::placeholders::_1)); //potremmo cambiarlo da std::placeholders::_1 --> _1
 
     free_poly_publisher_ = this->create_publisher<gbeam2_interfaces::msg::FreePolygonStamped>(
         "gbeam/free_polytope", 1);

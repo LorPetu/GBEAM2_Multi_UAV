@@ -139,21 +139,6 @@ def generate_launch_description():
         parameters = [config_ground]
     ))
 
-
-    # Specify the path to your RViz configuration file
-    #rviz_config_file = "/home/pica/code/gbeam2_ws/src/gbeam2_simulator/rviz/turtlebot3_gazebo_poly&graph_draw_final.rviz"
-    # rviz_config_file = "/home/GBEAM2_MULTIUAV/src/gbeam2_simulator/rviz/turtlebot3_gazebo_poly&graph_draw.rviz"
-
-    # ld.add_action(
-    #     Node(
-    #     package="rviz2",
-    #     executable="rviz2",
-    #     name="rviz2",
-    #     arguments=["-d", rviz_config_file],
-    #     output="screen"
-    # )
-    # )
-
     ld.add_action(robot_prefix_arg)
 
     return ld

@@ -2,7 +2,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument,IncludeLaunchDescription, GroupAction
+from launch.actions import DeclareLaunchArgument,IncludeLaunchDescription, GroupAction, ExecuteProcess
 from launch.substitutions import Command
 from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PythonExpression
@@ -52,6 +52,18 @@ def generate_launch_description():
                     PythonExpression(["'", LaunchConfiguration('robot_prefix'), "/'"])
             }],
         )
+    
+    # Create a tf from world to robot_prefix/odom
+    world_static_tf = ExecuteProcess( 
+        cmd=[[
+            # executable
+            'ros2 run tf2_ros static_transform_publisher ',
+            # parameters
+            '0 0 0 0 0 0 world ',
+            PythonExpression(["'/", LaunchConfiguration('robot_prefix'), "/odom'"])
+        ]],
+        shell=True
+    )
 
     # Spawn robot
     start_gazebo_ros_spawner_cmd = Node(
@@ -66,6 +78,8 @@ def generate_launch_description():
         ],
         output='screen',
     )
+
+
 
     # launch gbeam 2 os.path.join(get_package_share_directory('gbeam2_simulator'),'launch/ground_nodes.launch.py')
 
@@ -95,7 +109,7 @@ def generate_launch_description():
     ld.add_action(robot_prefix_arg)
     ld.add_action(use_sim_time_arg)
     ld.add_action(robot_state_publisher)
-
+    ld.add_action(world_static_tf)
     ld.add_action(start_gazebo_ros_spawner_cmd)
 
     ld.add_action(gbeam2_launch)

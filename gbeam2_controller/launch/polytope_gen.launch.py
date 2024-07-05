@@ -8,8 +8,8 @@
 #     return launch.LaunchDescription([
 #         DeclareLaunchArgument(
 #             'global_param',
-#             default_value='/home/pica/code/gbeam2_ws/src/gbeam2_controller/config/global_param.yaml', # Adjust the path accordingly
-#             description='/home/pica/code/gbeam2_ws/src/gbeam2_controller/config/global_param.yaml'
+#             default_value='/home/pica/code/GBEAM2_MultiUAV/src/gbeam2_controller/config/global_param.yaml', # Adjust the path accordingly
+#             description='/home/pica/code/GBEAM2_MultiUAV/src/gbeam2_controller/config/global_param.yaml'
 #         ),
 #         Node(
 #             package='gbeam2_controller', # Replace with your package name

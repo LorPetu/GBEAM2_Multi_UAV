@@ -46,6 +46,7 @@ class GraphUpdateNode : public rclcpp::Node
 public:
     GraphUpdateNode() : Node("graph_update")    
     {
+        const char *name_space = this->get_namespace();
         poly_sub_ = this->create_subscription<gbeam2_interfaces::msg::FreePolygonStamped>(
             "gbeam/free_polytope", 1, std::bind(&GraphUpdateNode::polyCallback, this, std::placeholders::_1));
 
@@ -123,6 +124,7 @@ private:
     double obstacle_margin;
     double safe_dist;
 
+    char name_space;
     double limit_xi, limit_xs, limit_yi, limit_ys;
 
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
@@ -150,12 +152,12 @@ private:
 
         try {
           //RCLCPP_INFO(this->get_logger(),"lookupTransform -------> NOT done");
-          l2g_tf = tf_buffer_->lookupTransform("odom", poly_ptr->header.frame_id, poly_ptr->header.stamp);
+          l2g_tf = tf_buffer_->lookupTransform(name_space + "/odom", poly_ptr->header.frame_id, poly_ptr->header.stamp);
           //RCLCPP_INFO(this->get_logger(),"lookupTransform -------> done");
         } catch (const tf2::TransformException & ex) {
           RCLCPP_WARN(
             this->get_logger(), "GBEAM:graph_update:lookupTransform: Could not transform %s to %s: %s",
-            "odom", poly_ptr->header.frame_id.c_str(), ex.what());
+            name_space + "/odom", poly_ptr->header.frame_id.c_str(), ex.what());
             std::this_thread::sleep_for(std::chrono::seconds(1));
           return;
         }

@@ -61,7 +61,7 @@ def generate_launch_description():
           launch_arguments = {
               'world': PathJoinSubstitution([pkg_multi_turtlebot_sim,'worlds', world_name]),
               'verbose': verbose,
-              'gui': 'true',
+              'gui': 'false',
           }.items()
     )
 

@@ -53,7 +53,7 @@ public:
     this->declare_parameter<double>("start_dist",0.0);
     this->declare_parameter<double>("obstacle_d_thr",0.0);
     this->declare_parameter<double>("safe_dist",0.0);
-    this->declare_parameter<double>("update_freq",0.0);
+    this->declare_parameter<double>("update_freq",2.0);
     this->declare_parameter<float>("obst_dist_min", 0.0);
     
 
@@ -77,7 +77,7 @@ public:
 
 
     timer_ = this->create_wall_timer(
-        std::chrono::milliseconds(static_cast<int>(1000.0 / update_freq)),
+        std::chrono::milliseconds(static_cast<int>(1000.0f / update_freq)),
         std::bind(&PolyGenNode::generatePoly, this));
   }
 

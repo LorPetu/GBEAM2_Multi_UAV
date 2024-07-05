@@ -27,8 +27,8 @@ def generate_launch_description():
         package = 'gbeam2_controller',
         name = 'poly_gen',                  ##qua il node name è poly_gen, il nome che viene dato alla classe nel polytope_generation_node
         executable = 'polytope_generation_node',
-        namespace= robot_prefix,
-        parameters = [config]
+        parameters = [config],
+        namespace= robot_prefix
     )
 
     graph_update=Node(
@@ -49,18 +49,18 @@ def generate_launch_description():
         # depends_on = ['graph_update']
     )
     
-    # set_map_status = ExecuteProcess(
-    #     cmd=[ #ros2 service call /gbeam/set_mapping_status gbeam2_interfaces/srv/SetMappingStatus "request: true"'
-    #         [
-    #             FindExecutable(name="ros2"),
-    #             ' service call ',
-    #             '/gbeam/set_mapping_status ',
-    #             'gbeam2_interfaces/srv/SetMappingStatus ',
-    #             '"request: true"',
-    #         ]
-    #     ],
-    #     shell=True,
-    # )
+    set_map_status = ExecuteProcess(
+        cmd=[ #ros2 service call /gbeam/set_mapping_status gbeam2_interfaces/srv/SetMappingStatus "request: true"'
+            [
+                FindExecutable(name="ros2"),
+                ' service call ',
+                '/gbeam/set_mapping_status ',
+                'gbeam2_interfaces/srv/SetMappingStatus ',
+                '"request: true"',
+            ]
+        ],
+        shell=True,
+    )
     
     # ddrive = Node(
     #     package='gbeam2_simulator',
@@ -106,7 +106,8 @@ def generate_launch_description():
                                    LogInfo(msg="Set mapping status"),
                                         graph_expl]
                 )
-        )
+        ),
+        set_map_status
         ]
     )
 

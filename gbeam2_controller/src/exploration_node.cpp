@@ -41,7 +41,8 @@ class ExplorationNode : public rclcpp::Node
 {
 public:
     ExplorationNode() : Node("graph_expl")
-    {
+    {   
+        const char *name_space = this->get_namespace();
         graph_subscriber_ = this->create_subscription<gbeam2_interfaces::msg::ReachabilityGraph>(
             "gbeam/reachability_graph", 1, std::bind(&ExplorationNode::graphCallback, this, std::placeholders::_1));
 
@@ -100,6 +101,7 @@ private:
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
     
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+    char name_space;
     
     gbeam2_interfaces::msg::ReachabilityGraph graph;
     gbeam2_interfaces::msg::Vertex last_target_vertex;
@@ -169,11 +171,11 @@ private:
 
         try {
     
-          l2g_tf = tf_buffer_->lookupTransform("odom", "base_scan", tf2::TimePointZero);
+          l2g_tf = tf_buffer_->lookupTransform(name_space +"/odom", name_space +"/base_scan", tf2::TimePointZero);
         } catch (const tf2::TransformException & ex) {
           RCLCPP_WARN(
             this->get_logger(), "GBEAM:graph_expl:lookupTransform: Could not transform %s to %s: %s",
-            "odom", "base_scan", ex.what());
+            name_space +"/odom", name_space +"/base_scan", ex.what());
             std::this_thread::sleep_for(std::chrono::seconds(1));
           return;
         } 

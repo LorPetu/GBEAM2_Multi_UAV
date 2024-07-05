@@ -2,7 +2,7 @@
 ## and ROS2 will not display the error. In this case, your node name (which can be different 
 ## from the executable name)
 
-poly_gen:
+/**/poly_gen:
   ros__parameters:
     update_freq: 2.0 # Hz     #2.0
     num_vertices: 6        # 6
@@ -12,7 +12,7 @@ poly_gen:
     safe_dist: 0.2   # m
     obst_dist_min: 0.1 #m
 
-graph_update:
+/**/graph_update:
   ros__parameters:
     node_dist_min: 0.1
     node_dist_open: 0.3
@@ -24,7 +24,7 @@ graph_update:
     limit_yi:  -2.5             #-1.0
     limit_ys: 2.5               #1.0
 
-graph_expl:
+/**/graph_expl:
   ros__parameters:
     limit_xi: -2.5          #-1.0
     limit_xs:  2.5              #1.0

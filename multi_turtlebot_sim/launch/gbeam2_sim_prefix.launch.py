@@ -49,19 +49,6 @@ def generate_launch_description():
         # depends_on = ['graph_update']
     )
     
-    set_map_status = ExecuteProcess(
-        cmd=[ #ros2 service call /gbeam/set_mapping_status gbeam2_interfaces/srv/SetMappingStatus "request: true"'
-            [
-                FindExecutable(name="ros2"),
-                ' service call ',
-                '/gbeam/set_mapping_status ',
-                'gbeam2_interfaces/srv/SetMappingStatus ',
-                '"request: true"',
-            ]
-        ],
-        shell=True,
-    )
-    
     # ddrive = Node(
     #     package='gbeam2_simulator',
     #     name="pos_contr",
@@ -106,8 +93,7 @@ def generate_launch_description():
                                    LogInfo(msg="Set mapping status"),
                                         graph_expl]
                 )
-        ),
-        set_map_status
+        )
         ]
     )
 

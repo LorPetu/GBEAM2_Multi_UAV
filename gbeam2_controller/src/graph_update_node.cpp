@@ -87,6 +87,7 @@ public:
         limit_ys = this->get_parameter("limit_ys").get_parameter_value().get<double>();
       
         RCLCPP_INFO(this->get_logger(),"############# PARAMETERS OF GRAPH_UPDATE: ############# ");
+        RCLCPP_INFO(this->get_logger(),"############# (for %s) ############# ",name_space);
         RCLCPP_INFO(this->get_logger(),"1) NODE_DIST_MIN: %f", node_dist_min);
         RCLCPP_INFO(this->get_logger(),"2) NODE_DIST_OPEN: %f", node_dist_open);
         RCLCPP_INFO(this->get_logger(),"3) NODE_BOUND_DIST: %f", node_bound_dist);

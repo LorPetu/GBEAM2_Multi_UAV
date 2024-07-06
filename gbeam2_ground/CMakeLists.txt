@@ -14,6 +14,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
+find_package(foxglove_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(gbeam2_interfaces REQUIRED)
@@ -34,6 +35,7 @@ set(my_dep
   "sensor_msgs"
   "nav_msgs"
   "visualization_msgs"
+  "foxglove_msgs"
   "tf2_ros"
   "tf2_geometry_msgs"
   "gbeam2_interfaces"

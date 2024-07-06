@@ -40,14 +40,14 @@ def generate_launch_description():
         # depends_on = ['poly_gen']
     )
 
-    graph_expl = Node(
-        package = 'gbeam2_controller',
-        name = 'graph_expl',                 
-        executable = 'exploration_node',
-        parameters = [config],
-        namespace=robot_prefix,
-        # depends_on = ['graph_update']
-    )
+    # graph_expl = Node(
+    #     package = 'gbeam2_controller',
+    #     name = 'graph_expl',                 
+    #     executable = 'exploration_node',
+    #     parameters = [config],
+    #     namespace=robot_prefix,
+    #     # depends_on = ['graph_update']
+    # )
     
     # ddrive = Node(
     #     package='gbeam2_simulator',
@@ -89,9 +89,8 @@ def generate_launch_description():
          
         RegisterEventHandler(OnProcessStart(
              target_action=graph_update,
-             on_start=[LogInfo(msg="Started the graph_update"),
-                                   LogInfo(msg="Set mapping status"),
-                                        graph_expl]
+             on_start=LogInfo(msg="Started the graph_update")
+                    
                 )
         )
         ]

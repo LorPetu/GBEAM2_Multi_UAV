@@ -155,7 +155,7 @@ private:
         try {
             
             //RCLCPP_INFO(this->get_logger(), "lookupTransform -------> %s to %s", target_frame.c_str(), source_frame.c_str());
-            l2g_tf = tf_buffer_->lookupTransform(target_frame, source_frame, poly_ptr->header.stamp);
+            l2g_tf = tf_buffer_->lookupTransform(target_frame, source_frame, tf2::TimePointZero); //poly_ptr->header.stamp we get tranformation in the future
         } catch (const tf2::TransformException & ex) {
             RCLCPP_WARN(
                 this->get_logger(), "GBEAM:graph_update:lookupTransform: Could not transform %s to %s: %s",

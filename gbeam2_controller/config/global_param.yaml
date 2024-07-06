@@ -31,7 +31,7 @@
     limit_yi:  -2.5             #-1.0
     limit_ys: 2.5               #1.0
     distance_exp: 4.0
-    reached_tol: 0.05
+    reached_tol: 0.5
 
 
 

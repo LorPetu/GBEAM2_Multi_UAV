@@ -141,15 +141,15 @@ private:
         }
         }
 
-        //RCLCPP_INFO(this->get_logger(), "Target node (best): %d", best_node);
+        RCLCPP_INFO(this->get_logger(), "Target node (best): %d", best_node);
 
-        //RCLCPP_INFO(this->get_logger(), "Computing path from %d to %d", last_target, best_node);
+        RCLCPP_INFO(this->get_logger(), "Computing path from %d to %d", last_target, best_node);
         std::vector<int> path = dijkstra(graph, last_target, best_node);
 
         std::string path_str;
         for (int i=0; i<path.size(); i++)
         path_str = path_str + std::to_string(path[i]) + "-";
-        //RCLCPP_INFO(this->get_logger(), "New path is: %s", path_str.c_str());
+        RCLCPP_INFO(this->get_logger(), "New path is: %s", path_str.c_str());
 
         if (path.size() > 1) last_target = path[1];
 
@@ -160,10 +160,10 @@ private:
         pos_ref.pose.position = vertex2point(vert);
         //RCLCPP_INFO(this->get_logger(),"vertex to point executed ");
         pos_ref.pose.position.z = mapping_z;
-        //RCLCPP_INFO(this->get_logger()," publish pos ref: x: %f y: %f",pos_ref.pose.position.x,pos_ref.pose.position.y);
-        pos_ref.header.frame_id = name_space + "odom";
+        RCLCPP_INFO(this->get_logger()," publish pos ref: x: %f y: %f",pos_ref.pose.position.x,pos_ref.pose.position.y);
+        pos_ref.header.frame_id = name_space.substr(1, name_space.length()-1) + "/odom";
         pos_ref_publisher_->publish(pos_ref);
-        //RCLCPP_INFO(this->get_logger(),"PUBLISHED!!!!!!! ");
+        RCLCPP_INFO(this->get_logger(),"PUBLISHED!!!!!!! ");
     }
         
     void explorationCallback(){

@@ -21,14 +21,15 @@ class PositionController : public rclcpp::Node
 public:
     PositionController(): Node("pos_contr") 
     {
+        name_space = this->get_namespace();
         scan_subscriber_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-            "/scan", 1, std::bind(&PositionController::scanCallback, this, std::placeholders::_1));
+            name_space+"/scan", 1, std::bind(&PositionController::scanCallback, this, std::placeholders::_1));
 
         odom_subscriber_ = this->create_subscription<nav_msgs::msg::Odometry>(
-            "/odom", 1, std::bind(&PositionController::odomCallback, this, std::placeholders::_1));
+            name_space+ "/odom", 1, std::bind(&PositionController::odomCallback, this, std::placeholders::_1));
 
         ref_pos_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-            "/gbeam/gbeam_pos_ref", 1, std::bind(&PositionController::refPosCallback, this, std::placeholders::_1));
+            name_space+"/gbeam/gbeam_pos_ref", 1, std::bind(&PositionController::refPosCallback, this, std::placeholders::_1));
 
         cmd_vel_publisher_ = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 1);
 
@@ -68,6 +69,8 @@ private:
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subscriber_;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ref_pos_subscriber_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_publisher_;
+
+    std::string name_space;
 
     sensor_msgs::msg::LaserScan scan_;
     nav_msgs::msg::Odometry robot_odom_;

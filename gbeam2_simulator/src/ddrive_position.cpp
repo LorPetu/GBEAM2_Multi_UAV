@@ -75,6 +75,7 @@ private:
     sensor_msgs::msg::LaserScan scan_;
     nav_msgs::msg::Odometry robot_odom_;
     geometry_msgs::msg::PoseStamped target_pos_;
+    bool pos_ref_received = false;
 
     rclcpp::TimerBase::SharedPtr timer_;
 
@@ -86,12 +87,15 @@ private:
     void odomCallback(const nav_msgs::msg::Odometry::SharedPtr odom_ptr)
     {
         robot_odom_ = *odom_ptr;
+        RCLCPP_INFO(this->get_logger(),"odom received: x:%f y:%f",robot_odom_.pose.pose.position.x,robot_odom_.pose.pose.position.y);
     }
 
     void refPosCallback(const geometry_msgs::msg::PoseStamped::SharedPtr tar_pos_ptr)
     {
         //RCLCPP_INFO(this->get_logger(), "refCallback executed. Point received x: %f y: %f",tar_pos_ptr->pose.position.x, tar_pos_ptr->pose.position.x);
         target_pos_ = *tar_pos_ptr;
+        pos_ref_received=true;
+
     }
 
     float limit(float v, float max, float min)
@@ -103,9 +107,10 @@ private:
     {
         geometry_msgs::msg::Twist cmd_vel;
 
-        
-        float delta_x = target_pos_.pose.position.x - robot_odom_.pose.pose.position.x;
+        if(pos_ref_received){
+            float delta_x = target_pos_.pose.position.x - robot_odom_.pose.pose.position.x;
         float delta_y = target_pos_.pose.position.y - robot_odom_.pose.pose.position.y;
+        RCLCPP_INFO(this->get_logger(),"Target node position: delta_x:%f delta_y:%f",delta_x,delta_y);
         float yaw_part_y = 2 * (robot_odom_.pose.pose.orientation.w * robot_odom_.pose.pose.orientation.z + robot_odom_.pose.pose.orientation.x * robot_odom_.pose.pose.orientation.y);
         float yaw_part_x = 1 - 2 * (robot_odom_.pose.pose.orientation.y * robot_odom_.pose.pose.orientation.y + robot_odom_.pose.pose.orientation.z * robot_odom_.pose.pose.orientation.z);
         float yaw = atan2(yaw_part_y, yaw_part_x); // yaw of the robot
@@ -140,6 +145,9 @@ private:
 
         cmd_vel_publisher_->publish(cmd_vel);
     }
+        }
+
+        
 
 
 

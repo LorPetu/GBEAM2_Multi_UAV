@@ -169,18 +169,21 @@ private:
     void explorationCallback(){
         geometry_msgs::msg::TransformStamped l2g_tf;
 
+        std::string target_frame = name_space.substr(1, name_space.length()-1) + "/odom"; //becasue lookupTransform doesn't allow "/" as first character
+        std::string source_frame = name_space.substr(1, name_space.length()-1) + "/base_scan";
         try {
-    
-          l2g_tf = tf_buffer_->lookupTransform(name_space +"/odom", name_space +"/base_scan", tf2::TimePointZero);
+            
+            //RCLCPP_INFO(this->get_logger(), "lookupTransform -------> %s to %s", target_frame.c_str(), source_frame.c_str());
+            l2g_tf = tf_buffer_->lookupTransform(target_frame, source_frame, tf2::TimePointZero);
         } catch (const tf2::TransformException & ex) {
-          RCLCPP_WARN(
-            this->get_logger(), "GBEAM:graph_expl:lookupTransform: Could not transform %s to %s: %s",
-            name_space +"/odom", name_space +"/base_scan", ex.what());
+            RCLCPP_WARN(
+                this->get_logger(), "GBEAM:graph_update:lookupTransform: Could not transform %s to %s: %s",
+                target_frame.c_str(), source_frame.c_str(), ex.what());
             std::this_thread::sleep_for(std::chrono::seconds(1));
-          return;
+            return;
         } 
 
-            //create dummy vertex corresponding to robot position
+        //create dummy vertex corresponding to robot position
         gbeam2_interfaces::msg::Vertex position;
         position = vert_transform(position, l2g_tf);  // create temporary vertex at robot position
         // check if last_target has been reached

@@ -150,7 +150,7 @@ private:
 
         geometry_msgs::msg::TransformStamped l2g_tf;
         //RCLCPP_INFO(this->get_logger(),"TransformStamped local to global tf -------> done");
-        std::string target_frame = name_space.substr(1, name_space.length()-1) + "/odom";
+        std::string target_frame = name_space.substr(1, name_space.length()-1) + "/odom"; //becasue lookupTransform doesn't allow "/" as first character
         std::string source_frame = poly_ptr->header.frame_id;
         try {
             

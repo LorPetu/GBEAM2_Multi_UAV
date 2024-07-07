@@ -187,7 +187,7 @@ private:
 
         //RCLCPP_INFO(this->get_logger(),"####### ---------- ADD GRAPH NODES --------- #######");
         //add graph vertices if they satisfy condition
-        for (int i=0; i<poly_ptr->polygon.vertices_reachable.size(); i++)
+for (int i=0; i<poly_ptr->polygon.vertices_reachable.size(); i++)
         {
             //RCLCPP_INFO(this->get_logger(),"entrato nel primo for -------> ");
             gbeam2_interfaces::msg::Vertex vert = poly_ptr->polygon.vertices_reachable[i];  //get vertex from polytope
@@ -248,7 +248,7 @@ private:
         //create vectors with indices of vertices inside polytopes
         std::vector<int> inObstaclesId;
         for (int i=0; i<graph.nodes.size(); i++)
-            if (isInsideObstacles(polyGlobal, graph.nodes[i]))
+            if (isInsideReachable(polyGlobal, graph.nodes[i])) //CAMBIATO QUA IMPORTANTE
             inObstaclesId.push_back(i);
 
         // create edges between nodes inside poly_obstacles

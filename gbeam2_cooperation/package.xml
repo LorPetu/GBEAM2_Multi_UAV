@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>gbeam2_collaborative</name>
+  <name>gbeam2_cooperation</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
   <maintainer email="lo.petulicchio@gmail.com">lor</maintainer>

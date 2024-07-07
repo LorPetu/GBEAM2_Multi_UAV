@@ -24,6 +24,8 @@ set(msg_files
   "msg/FreePolygonStamped.msg"
   "msg/PolyArea.msg"
   "msg/ReachabilityGraph.msg"
+  "msg/Status.msg"
+  "msg/FrontierStamped.msg"
   "srv/SetMappingStatus.srv"
 )
 

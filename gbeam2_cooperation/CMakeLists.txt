@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(gbeam2_collaborative)
+project(gbeam2_cooperation)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -40,6 +40,10 @@ target_compile_features(cooperation_manager PUBLIC c_std_99 cxx_std_17)  # Requi
 
 install(TARGETS cooperation_manager
   DESTINATION lib/${PROJECT_NAME})
+
+install(DIRECTORY config
+  DESTINATION share/${PROJECT_NAME}
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

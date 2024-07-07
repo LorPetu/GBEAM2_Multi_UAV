@@ -1,0 +1,7 @@
+## mportant: if the name is not exactly the same as the node name, parameters won’t be loaded, 
+## and ROS2 will not display the error. In this case, your node name (which can be different 
+## from the executable name)
+
+/**:
+  ros__parameters:
+    communication_range : 5.0 

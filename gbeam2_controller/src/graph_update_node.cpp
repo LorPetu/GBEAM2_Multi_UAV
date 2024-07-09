@@ -99,10 +99,6 @@ public:
         RCLCPP_INFO(this->get_logger(),"8) LIMIT_YI: %f", limit_yi);
         RCLCPP_INFO(this->get_logger(),"9) LIMIT_YS: %f", limit_ys);
 
-        for(int i=0; i<10000; i++)
-        for(int j=0; j<10000; j++)
-            adjacency[i][j] = -1;
-
     }    
 
     // Declaration of the setStatus function
@@ -134,9 +130,6 @@ private:
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::string name_space;
 
-    float adjacency[10000][10000] = {};
-    //std::vector<std::vector<float>> new_adj_matrix;
-
     gbeam2_interfaces::msg::Graph graph;
 
     rclcpp::Publisher<gbeam2_interfaces::msg::Graph>::SharedPtr graph_pub_;
@@ -166,7 +159,6 @@ private:
             return;
         }
 
-        //adj_matrix = GraphAdj2matrix(graph.adj_matrix);
 
         // ####################################################
         // ####### ---------- ADD GRAPH NODES --------- #######
@@ -192,8 +184,7 @@ private:
                 vert.is_reachable = false;
                 vert.gain = 0;
             }
-            //graph.nodes.push_back(vert); //add vertex to the graph
-            addNode(graph,vert);
+            addNode(graph,vert); //add vertex to the graph
             is_changed = true;
             }
         }
@@ -218,13 +209,13 @@ private:
                 vert.is_reachable = false;
                 vert.gain = 0;
             }
-            //graph.nodes.push_back(vert); //add vertex to the graph
-            addNode(graph,vert);
+
+            addNode(graph,vert);         //add vertex to the graph
             is_changed = true;
             }
         }
 
-        //auto new_adj_matrix = GraphAdj2matrix(graph.adj_matrix);
+        auto new_adj_matrix = GraphAdj2matrix(graph.adj_matrix);
 
         // ####################################################
         // ####### ---------- ADD GRAPH EDGES --------- #######
@@ -246,7 +237,7 @@ private:
             //RCLCPP_INFO(this->get_logger()," -------> entra nel primo for (ADD GRAPH EDGES)");
             for (int j=i+1; j<inObstaclesId.size(); j++)
             {
-            if (adjacency[inObstaclesId[i]][inObstaclesId[j]] == -1) // if edge not already present
+            if (new_adj_matrix[inObstaclesId[i]][inObstaclesId[j]] == -1) // if edge not already present
             {
                 //RCLCPP_INFO(this->get_logger()," -------> entra nel primo if (ADD GRAPH EDGES)");
                 //then add edge i-j to graph
@@ -257,26 +248,22 @@ private:
                 graph.edges.push_back(edge);
 
                 //update adjacency matrix
-                adjacency[inObstaclesId[i]][inObstaclesId[j]] = edge.id;
-                adjacency[inObstaclesId[j]][inObstaclesId[i]] = edge.id;
-
-                //update new adj 
-                //new_adj_matrix[inObstaclesId[i]][inObstaclesId[j]] = edge.id;
-                //new_adj_matrix[inObstaclesId[j]][inObstaclesId[i]] = edge.id;
+                new_adj_matrix[inObstaclesId[i]][inObstaclesId[j]] = edge.id;
+                new_adj_matrix[inObstaclesId[j]][inObstaclesId[i]] = edge.id;
 
                 is_changed = true;
             }
             else  // if edge is present, check if it is walkable
             {
                 //RCLCPP_INFO(this->get_logger()," -------> entra nell'else del secondo if (ADD GRAPH EDGES)");
-                int e = adjacency[inObstaclesId[i]][inObstaclesId[j]];
+                int e = new_adj_matrix[inObstaclesId[i]][inObstaclesId[j]];
                 if(isInsideReachable(polyGlobal, graph.nodes[graph.edges[e].v1]) && isInsideReachable(polyGlobal, graph.nodes[graph.edges[e].v2]))
                 graph.edges[e].is_walkable = true;
             }
             }
         }
 
-        //graph.adj_matrix=matrix2GraphAdj(new_adj_matrix);
+        graph.adj_matrix=matrix2GraphAdj(new_adj_matrix);
 
         // ####################################################
         // ####### --- UPDATE CONNECTIONS AND GAINS --- #######

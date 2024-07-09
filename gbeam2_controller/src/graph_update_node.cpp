@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 
 
@@ -134,6 +135,7 @@ private:
     std::string name_space;
 
     float adjacency[10000][10000] = {};
+    //std::vector<std::vector<float>> new_adj_matrix;
 
     gbeam2_interfaces::msg::Graph graph;
 
@@ -164,22 +166,7 @@ private:
             return;
         }
 
-        //RCLCPP_INFO(this->get_logger(),"lookupTransform -------> frameid: %s",poly_ptr->header.frame_id.c_str());
-
-        //RCLCPP_INFO(this->get_logger(),"lookupTransform -------> QUA SI FERMA?");
-
-        // //get transform
-        // try
-        // {   
-        //     // Get transformation from "/odom" to "/base_scan" at timestamp of the polytope (same as the laser scan actually)
-        //     l2g_tf = tf_buffer.lookupTransform("odom", poly_ptr->header.frame_id, poly_ptr->header.stamp);
-        // }
-        // catch (tf2::TransformException &ex)
-        // {
-        //     RCLCPP_WARN(this->get_logger(), "GBEAM:graph_update:lookupTransform: %s", ex.what());
-        //     std::this_thread::sleep_for(std::chrono::seconds(1));
-        //     return;
-        // }
+        //adj_matrix = GraphAdj2matrix(graph.adj_matrix);
 
         // ####################################################
         // ####### ---------- ADD GRAPH NODES --------- #######
@@ -205,7 +192,8 @@ private:
                 vert.is_reachable = false;
                 vert.gain = 0;
             }
-            graph.nodes.push_back(vert); //add vertex to the graph
+            //graph.nodes.push_back(vert); //add vertex to the graph
+            addNode(graph,vert);
             is_changed = true;
             }
         }
@@ -230,10 +218,13 @@ private:
                 vert.is_reachable = false;
                 vert.gain = 0;
             }
-            graph.nodes.push_back(vert); //add vertex to the graph
+            //graph.nodes.push_back(vert); //add vertex to the graph
+            addNode(graph,vert);
             is_changed = true;
             }
         }
+
+        //auto new_adj_matrix = GraphAdj2matrix(graph.adj_matrix);
 
         // ####################################################
         // ####### ---------- ADD GRAPH EDGES --------- #######
@@ -269,6 +260,10 @@ private:
                 adjacency[inObstaclesId[i]][inObstaclesId[j]] = edge.id;
                 adjacency[inObstaclesId[j]][inObstaclesId[i]] = edge.id;
 
+                //update new adj 
+                //new_adj_matrix[inObstaclesId[i]][inObstaclesId[j]] = edge.id;
+                //new_adj_matrix[inObstaclesId[j]][inObstaclesId[i]] = edge.id;
+
                 is_changed = true;
             }
             else  // if edge is present, check if it is walkable
@@ -279,15 +274,14 @@ private:
                 graph.edges[e].is_walkable = true;
             }
             }
-        }   
+        }
+
+        //graph.adj_matrix=matrix2GraphAdj(new_adj_matrix);
 
         // ####################################################
         // ####### --- UPDATE CONNECTIONS AND GAINS --- #######
         // #################################################### 
 
-        //RCLCPP_INFO(this->get_logger(),"####### ---------- UPDATE CONNECTIONS AND GAINS --------- #######");    
-
-        // update obstacle nodes connection status, only if something changed
         if(is_changed)
         {
             for(int n=0; n<graph.nodes.size(); n++)

@@ -588,19 +588,54 @@ gbeam2_interfaces::msg::GraphEdge computeEdge(gbeam2_interfaces::msg::Vertex ver
 // NEW FUNCTIONS
 gbeam2_interfaces::msg::GraphAdjacency matrix2GraphAdj(const std::vector<std::vector<float>>& matrix)
 {
-  gbeam2_interfaces::msg::GraphAdjacency adj;
-  int N = matrix.size();
-  adj.size=N;
-      for (int i = 0; i < N; ++i) {
+    gbeam2_interfaces::msg::GraphAdjacency adj;
+    int N = matrix.size();
+    adj.size = N;
+    adj.data.resize(N * N, 0.0f);  // Resize and initialize with zeros
+
+    for (int i = 0; i < N; ++i) {
         for (int j = 0; j < N; ++j) {
             adj.data[i * N + j] = matrix[i][j];
         }
     }
 
     return adj;
-
 }
 
+std::vector<std::vector<float>> GraphAdj2matrix(const gbeam2_interfaces::msg::GraphAdjacency& adj)
+{
+    int N = adj.size;
+    std::vector<std::vector<float>> matrix(N, std::vector<float>(N, 0.0f));  // Initialize with zeros
+
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            matrix[i][j] = adj.data[i * N + j];
+        }
+    }
+
+    return matrix;
+}
+
+void addNode(gbeam2_interfaces::msg::Graph& graph, const gbeam2_interfaces::msg::Vertex& vert)
+{
+    // Add vertex to the graph
+    graph.nodes.push_back(vert); 
+
+    // Update adjacency matrix
+    int N = graph.adj_matrix.size;
+    graph.adj_matrix.size = N + 1;
+    std::vector<float> new_data((N + 1) * (N + 1), -1.0f);
+
+    // Copy old data to new adjacency matrix
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            new_data[i * (N + 1) + j] = graph.adj_matrix.data[i * N + j];
+        }
+    }
+
+    // Replace old data with new data
+    graph.adj_matrix.data = new_data;
+}
 
 //*********************************************************************
 //********************* EXPLORATION FUNCTIONS *******************************

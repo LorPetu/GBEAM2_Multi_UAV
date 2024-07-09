@@ -27,6 +27,7 @@
 #include "gbeam2_interfaces/msg/vertex.hpp"
 #include "gbeam2_interfaces/msg/free_polygon.hpp"
 #include "gbeam2_interfaces/msg/graph.hpp"
+#include <gbeam2_interfaces/msg/graph_adjacency.hpp>
 #include "gbeam2_interfaces/msg/free_polygon_stamped.hpp"
 
 #include "tf2_ros/transform_listener.h"
@@ -167,7 +168,12 @@ bool isInBoundary(gbeam2_interfaces::msg::Vertex v, float l_xi, float l_xs, floa
 // compute data of edge between vertices vert1 and vert2
 gbeam2_interfaces::msg::GraphEdge computeEdge(gbeam2_interfaces::msg::Vertex vert1, gbeam2_interfaces::msg::Vertex vert2, float node_bound_dist);
 
+// NEW FUNCTIONS
+gbeam2_interfaces::msg::GraphAdjacency matrix2GraphAdj(const std::vector<std::vector<float>>& matrix);
 
+std::vector<std::vector<float>> GraphAdj2matrix(const gbeam2_interfaces::msg::GraphAdjacency& adj);
+
+void addNode(gbeam2_interfaces::msg::Graph& graph, const gbeam2_interfaces::msg::Vertex& vert);
 
 
 //*********************************************************************

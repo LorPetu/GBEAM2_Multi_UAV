@@ -160,7 +160,7 @@ private:
         pos_ref.pose.position = vertex2point(vert);
         //RCLCPP_INFO(this->get_logger(),"vertex to point executed ");
         pos_ref.pose.position.z = mapping_z;
-        RCLCPP_INFO(this->get_logger()," publish pos ref: x: %f y: %f",pos_ref.pose.position.x,pos_ref.pose.position.y);
+        //RCLCPP_INFO(this->get_logger()," publish pos ref: x: %f y: %f",pos_ref.pose.position.x,pos_ref.pose.position.y);
         pos_ref.header.frame_id = name_space.substr(1, name_space.length()-1) + "/odom";
         pos_ref_publisher_->publish(pos_ref);
         //RCLCPP_INFO(this->get_logger(),"PUBLISHED!!!!!!! ");

@@ -26,7 +26,7 @@
 #include "gbeam2_interfaces/msg/poly_area.hpp"
 #include "gbeam2_interfaces/msg/vertex.hpp"
 #include "gbeam2_interfaces/msg/free_polygon.hpp"
-#include "gbeam2_interfaces/msg/reachability_graph.hpp"
+#include "gbeam2_interfaces/msg/graph.hpp"
 #include "gbeam2_interfaces/msg/free_polygon_stamped.hpp"
 
 #include "tf2_ros/transform_listener.h"
@@ -138,13 +138,13 @@ float dist(gbeam2_interfaces::msg::Vertex v, gbeam2_interfaces::msg::Vertex u);
 float dist(gbeam2_interfaces::msg::Vertex v, geometry_msgs::msg::PointStamped p);
 
 // compute minimum distance between vertex v and graph nodes
-float vert_graph_distance(gbeam2_interfaces::msg::ReachabilityGraph graph, gbeam2_interfaces::msg::Vertex v);
+float vert_graph_distance(gbeam2_interfaces::msg::Graph graph, gbeam2_interfaces::msg::Vertex v);
 
 // compute minimum distance between vertex v and obstacle graph nodes
-float vert_graph_distance_noobstacle(gbeam2_interfaces::msg::ReachabilityGraph graph, gbeam2_interfaces::msg::Vertex v);
+float vert_graph_distance_noobstacle(gbeam2_interfaces::msg::Graph graph, gbeam2_interfaces::msg::Vertex v);
 
 // compute minimum distance between vertex v and reachable graph nodes
-float vert_graph_distance_obstacle(gbeam2_interfaces::msg::ReachabilityGraph graph, gbeam2_interfaces::msg::Vertex v);
+float vert_graph_distance_obstacle(gbeam2_interfaces::msg::Graph graph, gbeam2_interfaces::msg::Vertex v);
 
 // apply transform tf to vertex v, return resulting vertex
 gbeam2_interfaces::msg::Vertex vert_transform(gbeam2_interfaces::msg::Vertex v, geometry_msgs::msg::TransformStamped tf);
@@ -187,14 +187,14 @@ int iMinCon(float arr[], bool con[], int size);
 int iMaxCon(float arr[], bool con[], int size);
 
 //compute distances matrices of graph
-void shortestDistances(gbeam2_interfaces::msg::ReachabilityGraph graph, float dist[], int start);
+void shortestDistances(gbeam2_interfaces::msg::Graph graph, float dist[], int start);
 
 // compute shortest path in graph from start to end
 // using Dijkstra algorithm
-std::vector<int> dijkstra(gbeam2_interfaces::msg::ReachabilityGraph graph, int s, int t);
+std::vector<int> dijkstra(gbeam2_interfaces::msg::Graph graph, int s, int t);
 
 // compute best path from s to t (if t<0 it is ignored)
-std::vector<int> bestPath(gbeam2_interfaces::msg::ReachabilityGraph graph, int s, int t);
+std::vector<int> bestPath(gbeam2_interfaces::msg::Graph graph, int s, int t);
 
 
 #endif  // LIBRARY_HPP

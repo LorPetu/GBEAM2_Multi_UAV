@@ -25,7 +25,7 @@
 #include "gbeam2_interfaces/msg/vertex.hpp"
 #include "gbeam2_interfaces/msg/graph_edge.hpp"
 #include "gbeam2_interfaces/msg/poly_area.hpp"
-#include "gbeam2_interfaces/msg/reachability_graph.hpp"
+#include "gbeam2_interfaces/msg/graph.hpp"
 
 #include "gbeam2_interfaces/srv/set_mapping_status.hpp"
 
@@ -50,7 +50,7 @@ public:
         poly_sub_ = this->create_subscription<gbeam2_interfaces::msg::FreePolygonStamped>(
             "gbeam/free_polytope", 1, std::bind(&GraphUpdateNode::polyCallback, this, std::placeholders::_1));
 
-        graph_pub_ =this->create_publisher<gbeam2_interfaces::msg::ReachabilityGraph>(
+        graph_pub_ =this->create_publisher<gbeam2_interfaces::msg::Graph>(
           "gbeam/reachability_graph",1);
         
         // SERVICE
@@ -135,9 +135,9 @@ private:
 
     float adjacency[10000][10000] = {};
 
-    gbeam2_interfaces::msg::ReachabilityGraph graph;
+    gbeam2_interfaces::msg::Graph graph;
 
-    rclcpp::Publisher<gbeam2_interfaces::msg::ReachabilityGraph>::SharedPtr graph_pub_;
+    rclcpp::Publisher<gbeam2_interfaces::msg::Graph>::SharedPtr graph_pub_;
     rclcpp::Subscription<gbeam2_interfaces::msg::FreePolygonStamped>::SharedPtr poly_sub_;
     rclcpp::Service<gbeam2_interfaces::srv::SetMappingStatus>::SharedPtr status_server_;
 
@@ -185,9 +185,7 @@ private:
         // ####### ---------- ADD GRAPH NODES --------- #######
         // ####################################################
 
-        //RCLCPP_INFO(this->get_logger(),"####### ---------- ADD GRAPH NODES --------- #######");
-        //add graph vertices if they satisfy condition
-for (int i=0; i<poly_ptr->polygon.vertices_reachable.size(); i++)
+        for (int i=0; i<poly_ptr->polygon.vertices_reachable.size(); i++)
         {
             //RCLCPP_INFO(this->get_logger(),"entrato nel primo for -------> ");
             gbeam2_interfaces::msg::Vertex vert = poly_ptr->polygon.vertices_reachable[i];  //get vertex from polytope

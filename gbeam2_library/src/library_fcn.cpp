@@ -434,7 +434,7 @@ float dist(gbeam2_interfaces::msg::Vertex v, geometry_msgs::msg::PointStamped p)
 }
 
 // compute minimum distance between vertex v and graph nodes
-float vert_graph_distance(gbeam2_interfaces::msg::ReachabilityGraph graph, gbeam2_interfaces::msg::Vertex v)
+float vert_graph_distance(gbeam2_interfaces::msg::Graph graph, gbeam2_interfaces::msg::Vertex v)
 {
   float d_min = INF;
   for (int i=0; i<graph.nodes.size(); i++)
@@ -447,7 +447,7 @@ float vert_graph_distance(gbeam2_interfaces::msg::ReachabilityGraph graph, gbeam
 }
 
 // compute minimum distance between vertex v and graph nodes
-float vert_graph_distance_noobstacle(gbeam2_interfaces::msg::ReachabilityGraph graph, gbeam2_interfaces::msg::Vertex v)
+float vert_graph_distance_noobstacle(gbeam2_interfaces::msg::Graph graph, gbeam2_interfaces::msg::Vertex v)
 {
   float d_min = INF;
   for (int i=0; i<graph.nodes.size(); i++)
@@ -463,7 +463,7 @@ float vert_graph_distance_noobstacle(gbeam2_interfaces::msg::ReachabilityGraph g
 }
 
 // compute minimum distance between vertex v and graph nodes
-float vert_graph_distance_obstacle(gbeam2_interfaces::msg::ReachabilityGraph graph, gbeam2_interfaces::msg::Vertex v)
+float vert_graph_distance_obstacle(gbeam2_interfaces::msg::Graph graph, gbeam2_interfaces::msg::Vertex v)
 {
   float d_min = INF;
   for (int i=0; i<graph.nodes.size(); i++)
@@ -585,6 +585,57 @@ gbeam2_interfaces::msg::GraphEdge computeEdge(gbeam2_interfaces::msg::Vertex ver
   return edge;
 }
 
+// NEW FUNCTIONS
+gbeam2_interfaces::msg::GraphAdjacency matrix2GraphAdj(const std::vector<std::vector<float>>& matrix)
+{
+    gbeam2_interfaces::msg::GraphAdjacency adj;
+    int N = matrix.size();
+    adj.size = N;
+    adj.data.resize(N * N, 0.0f);  // Resize and initialize with zeros
+
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            adj.data[i * N + j] = matrix[i][j];
+        }
+    }
+
+    return adj;
+}
+
+std::vector<std::vector<float>> GraphAdj2matrix(const gbeam2_interfaces::msg::GraphAdjacency& adj)
+{
+    int N = adj.size;
+    std::vector<std::vector<float>> matrix(N, std::vector<float>(N, 0.0f));  // Initialize with zeros
+
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            matrix[i][j] = adj.data[i * N + j];
+        }
+    }
+
+    return matrix;
+}
+
+void addNode(gbeam2_interfaces::msg::Graph& graph, const gbeam2_interfaces::msg::Vertex& vert)
+{
+    // Add vertex to the graph
+    graph.nodes.push_back(vert); 
+
+    // Update adjacency matrix
+    int N = graph.adj_matrix.size;
+    graph.adj_matrix.size = N + 1;
+    std::vector<float> new_data((N + 1) * (N + 1), -1.0f);
+
+    // Copy old data to new adjacency matrix
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            new_data[i * (N + 1) + j] = graph.adj_matrix.data[i * N + j];
+        }
+    }
+
+    // Replace old data with new data
+    graph.adj_matrix.data = new_data;
+}
 
 //*********************************************************************
 //********************* EXPLORATION FUNCTIONS *******************************
@@ -655,7 +706,7 @@ int iMaxCon(float arr[], bool con[], int size)
 }
 
 //compute distances matrices of graph
-void shortestDistances(gbeam2_interfaces::msg::ReachabilityGraph graph, float dist[], int start)
+void shortestDistances(gbeam2_interfaces::msg::Graph graph, float dist[], int start)
 {
   int E = graph.edges.size();
   int N = graph.nodes.size();
@@ -702,7 +753,7 @@ void shortestDistances(gbeam2_interfaces::msg::ReachabilityGraph graph, float di
 
 // compute shortest path in graph from start to end
 // using Dijkstra algorithm
-std::vector<int> dijkstra(gbeam2_interfaces::msg::ReachabilityGraph graph, int s, int t)
+std::vector<int> dijkstra(gbeam2_interfaces::msg::Graph graph, int s, int t)
 {
   int N = graph.nodes.size();
   int E = graph.edges.size();
@@ -755,7 +806,7 @@ std::vector<int> dijkstra(gbeam2_interfaces::msg::ReachabilityGraph graph, int s
 }
 
 // compute best path from s to t (if t<0 it is ignored)
-std::vector<int> bestPath(gbeam2_interfaces::msg::ReachabilityGraph graph, int s, int t)
+std::vector<int> bestPath(gbeam2_interfaces::msg::Graph graph, int s, int t)
 {
   int N = graph.nodes.size();
   int E = graph.edges.size();

@@ -18,7 +18,7 @@
 #include "gbeam2_interfaces/msg/vertex.hpp"
 #include "gbeam2_interfaces/msg/graph_edge.hpp"
 #include "gbeam2_interfaces/msg/poly_area.hpp"
-#include "gbeam2_interfaces/msg/reachability_graph.hpp"
+#include "gbeam2_interfaces/msg/graph.hpp"
 
 #include "tf2_ros/transform_listener.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.h"
@@ -39,7 +39,7 @@ public:
         graph_normals_pub = this->create_publisher<visualization_msgs::msg::Marker>("gbeam_visualization/graph_nodes_normals", 1);
         graph_edges_pub = this->create_publisher<visualization_msgs::msg::Marker>("gbeam_visualization/graph_edges", 1);
 
-        graph_sub = this->create_subscription<gbeam2_interfaces::msg::ReachabilityGraph>(
+        graph_sub = this->create_subscription<gbeam2_interfaces::msg::Graph>(
             "gbeam/reachability_graph", 1,
             std::bind(&GraphDrawer::graphCallback, this, std::placeholders::_1));
 
@@ -58,7 +58,7 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr graph_nodes_pub;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr graph_normals_pub;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr graph_edges_pub;
-    rclcpp::Subscription<gbeam2_interfaces::msg::ReachabilityGraph>::SharedPtr graph_sub;
+    rclcpp::Subscription<gbeam2_interfaces::msg::Graph>::SharedPtr graph_sub;
 
     float scaling;
     sensor_msgs::msg::PointCloud2 pointCloudTOpointCloud2(const sensor_msgs::msg::PointCloud msg)
@@ -130,7 +130,7 @@ private:
         
     };
 
-    void graphCallback(const gbeam2_interfaces::msg::ReachabilityGraph::SharedPtr graph_ptr)
+    void graphCallback(const gbeam2_interfaces::msg::Graph::SharedPtr graph_ptr)
     {
         
 

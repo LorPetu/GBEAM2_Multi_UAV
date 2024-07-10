@@ -87,7 +87,7 @@ private:
     void odomCallback(const nav_msgs::msg::Odometry::SharedPtr odom_ptr)
     {
         robot_odom_ = *odom_ptr;
-        RCLCPP_INFO(this->get_logger(),"odom received: x:%f y:%f",robot_odom_.pose.pose.position.x,robot_odom_.pose.pose.position.y);
+        //RCLCPP_INFO(this->get_logger(),"odom received: x:%f y:%f",robot_odom_.pose.pose.position.x,robot_odom_.pose.pose.position.y);
     }
 
     void refPosCallback(const geometry_msgs::msg::PoseStamped::SharedPtr tar_pos_ptr)

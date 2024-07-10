@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 
 
@@ -25,7 +26,7 @@
 #include "gbeam2_interfaces/msg/vertex.hpp"
 #include "gbeam2_interfaces/msg/graph_edge.hpp"
 #include "gbeam2_interfaces/msg/poly_area.hpp"
-#include "gbeam2_interfaces/msg/reachability_graph.hpp"
+#include "gbeam2_interfaces/msg/graph.hpp"
 
 #include "gbeam2_interfaces/srv/set_mapping_status.hpp"
 
@@ -50,7 +51,7 @@ public:
         poly_sub_ = this->create_subscription<gbeam2_interfaces::msg::FreePolygonStamped>(
             "gbeam/free_polytope", 1, std::bind(&GraphUpdateNode::polyCallback, this, std::placeholders::_1));
 
-        graph_pub_ =this->create_publisher<gbeam2_interfaces::msg::ReachabilityGraph>(
+        graph_pub_ =this->create_publisher<gbeam2_interfaces::msg::Graph>(
           "gbeam/reachability_graph",1);
         
         // SERVICE
@@ -98,10 +99,6 @@ public:
         RCLCPP_INFO(this->get_logger(),"8) LIMIT_YI: %f", limit_yi);
         RCLCPP_INFO(this->get_logger(),"9) LIMIT_YS: %f", limit_ys);
 
-        for(int i=0; i<10000; i++)
-        for(int j=0; j<10000; j++)
-            adjacency[i][j] = -1;
-
     }    
 
     // Declaration of the setStatus function
@@ -133,11 +130,9 @@ private:
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::string name_space;
 
-    float adjacency[10000][10000] = {};
+    gbeam2_interfaces::msg::Graph graph;
 
-    gbeam2_interfaces::msg::ReachabilityGraph graph;
-
-    rclcpp::Publisher<gbeam2_interfaces::msg::ReachabilityGraph>::SharedPtr graph_pub_;
+    rclcpp::Publisher<gbeam2_interfaces::msg::Graph>::SharedPtr graph_pub_;
     rclcpp::Subscription<gbeam2_interfaces::msg::FreePolygonStamped>::SharedPtr poly_sub_;
     rclcpp::Service<gbeam2_interfaces::srv::SetMappingStatus>::SharedPtr status_server_;
 
@@ -164,30 +159,12 @@ private:
             return;
         }
 
-        //RCLCPP_INFO(this->get_logger(),"lookupTransform -------> frameid: %s",poly_ptr->header.frame_id.c_str());
-
-        //RCLCPP_INFO(this->get_logger(),"lookupTransform -------> QUA SI FERMA?");
-
-        // //get transform
-        // try
-        // {   
-        //     // Get transformation from "/odom" to "/base_scan" at timestamp of the polytope (same as the laser scan actually)
-        //     l2g_tf = tf_buffer.lookupTransform("odom", poly_ptr->header.frame_id, poly_ptr->header.stamp);
-        // }
-        // catch (tf2::TransformException &ex)
-        // {
-        //     RCLCPP_WARN(this->get_logger(), "GBEAM:graph_update:lookupTransform: %s", ex.what());
-        //     std::this_thread::sleep_for(std::chrono::seconds(1));
-        //     return;
-        // }
 
         // ####################################################
         // ####### ---------- ADD GRAPH NODES --------- #######
         // ####################################################
 
-        //RCLCPP_INFO(this->get_logger(),"####### ---------- ADD GRAPH NODES --------- #######");
-        //add graph vertices if they satisfy condition
-for (int i=0; i<poly_ptr->polygon.vertices_reachable.size(); i++)
+        for (int i=0; i<poly_ptr->polygon.vertices_reachable.size(); i++)
         {
             //RCLCPP_INFO(this->get_logger(),"entrato nel primo for -------> ");
             gbeam2_interfaces::msg::Vertex vert = poly_ptr->polygon.vertices_reachable[i];  //get vertex from polytope
@@ -207,7 +184,7 @@ for (int i=0; i<poly_ptr->polygon.vertices_reachable.size(); i++)
                 vert.is_reachable = false;
                 vert.gain = 0;
             }
-            graph.nodes.push_back(vert); //add vertex to the graph
+            addNode(graph,vert); //add vertex to the graph
             is_changed = true;
             }
         }
@@ -232,10 +209,13 @@ for (int i=0; i<poly_ptr->polygon.vertices_reachable.size(); i++)
                 vert.is_reachable = false;
                 vert.gain = 0;
             }
-            graph.nodes.push_back(vert); //add vertex to the graph
+
+            addNode(graph,vert);         //add vertex to the graph
             is_changed = true;
             }
         }
+
+        auto new_adj_matrix = GraphAdj2matrix(graph.adj_matrix);
 
         // ####################################################
         // ####### ---------- ADD GRAPH EDGES --------- #######
@@ -257,7 +237,7 @@ for (int i=0; i<poly_ptr->polygon.vertices_reachable.size(); i++)
             //RCLCPP_INFO(this->get_logger()," -------> entra nel primo for (ADD GRAPH EDGES)");
             for (int j=i+1; j<inObstaclesId.size(); j++)
             {
-            if (adjacency[inObstaclesId[i]][inObstaclesId[j]] == -1) // if edge not already present
+            if (new_adj_matrix[inObstaclesId[i]][inObstaclesId[j]] == -1) // if edge not already present
             {
                 //RCLCPP_INFO(this->get_logger()," -------> entra nel primo if (ADD GRAPH EDGES)");
                 //then add edge i-j to graph
@@ -268,28 +248,27 @@ for (int i=0; i<poly_ptr->polygon.vertices_reachable.size(); i++)
                 graph.edges.push_back(edge);
 
                 //update adjacency matrix
-                adjacency[inObstaclesId[i]][inObstaclesId[j]] = edge.id;
-                adjacency[inObstaclesId[j]][inObstaclesId[i]] = edge.id;
+                new_adj_matrix[inObstaclesId[i]][inObstaclesId[j]] = edge.id;
+                new_adj_matrix[inObstaclesId[j]][inObstaclesId[i]] = edge.id;
 
                 is_changed = true;
             }
             else  // if edge is present, check if it is walkable
             {
                 //RCLCPP_INFO(this->get_logger()," -------> entra nell'else del secondo if (ADD GRAPH EDGES)");
-                int e = adjacency[inObstaclesId[i]][inObstaclesId[j]];
+                int e = new_adj_matrix[inObstaclesId[i]][inObstaclesId[j]];
                 if(isInsideReachable(polyGlobal, graph.nodes[graph.edges[e].v1]) && isInsideReachable(polyGlobal, graph.nodes[graph.edges[e].v2]))
                 graph.edges[e].is_walkable = true;
             }
             }
-        }   
+        }
+
+        graph.adj_matrix=matrix2GraphAdj(new_adj_matrix);
 
         // ####################################################
         // ####### --- UPDATE CONNECTIONS AND GAINS --- #######
         // #################################################### 
 
-        //RCLCPP_INFO(this->get_logger(),"####### ---------- UPDATE CONNECTIONS AND GAINS --------- #######");    
-
-        // update obstacle nodes connection status, only if something changed
         if(is_changed)
         {
             for(int n=0; n<graph.nodes.size(); n++)

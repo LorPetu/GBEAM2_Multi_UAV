@@ -25,7 +25,7 @@
 #include "gbeam2_interfaces/msg/vertex.hpp"
 #include "gbeam2_interfaces/msg/graph_edge.hpp"
 #include "gbeam2_interfaces/msg/poly_area.hpp"
-#include "gbeam2_interfaces/msg/reachability_graph.hpp"
+#include "gbeam2_interfaces/msg/graph.hpp"
 
 #include "gbeam2_interfaces/srv/set_mapping_status.hpp"
 
@@ -43,7 +43,7 @@ public:
     ExplorationNode() : Node("graph_expl")
     {   
         name_space = this->get_namespace();
-        graph_subscriber_ = this->create_subscription<gbeam2_interfaces::msg::ReachabilityGraph>(
+        graph_subscriber_ = this->create_subscription<gbeam2_interfaces::msg::Graph>(
             "gbeam/reachability_graph", 1, std::bind(&ExplorationNode::graphCallback, this, std::placeholders::_1));
 
         pos_ref_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>(
@@ -103,15 +103,15 @@ private:
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::string name_space;
     
-    gbeam2_interfaces::msg::ReachabilityGraph graph;
+    gbeam2_interfaces::msg::Graph graph;
     gbeam2_interfaces::msg::Vertex last_target_vertex;
     
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr  pos_ref_publisher_;
-    rclcpp::Subscription<gbeam2_interfaces::msg::ReachabilityGraph>::SharedPtr graph_subscriber_;
+    rclcpp::Subscription<gbeam2_interfaces::msg::Graph>::SharedPtr graph_subscriber_;
     rclcpp::TimerBase::SharedPtr timer_;
 
 
-    void graphCallback(const gbeam2_interfaces::msg::ReachabilityGraph::SharedPtr graph_ptr)
+    void graphCallback(const gbeam2_interfaces::msg::Graph::SharedPtr graph_ptr)
     {
         graph = *graph_ptr;
         N = graph.nodes.size();
@@ -160,7 +160,7 @@ private:
         pos_ref.pose.position = vertex2point(vert);
         //RCLCPP_INFO(this->get_logger(),"vertex to point executed ");
         pos_ref.pose.position.z = mapping_z;
-        RCLCPP_INFO(this->get_logger()," publish pos ref: x: %f y: %f",pos_ref.pose.position.x,pos_ref.pose.position.y);
+        //RCLCPP_INFO(this->get_logger()," publish pos ref: x: %f y: %f",pos_ref.pose.position.x,pos_ref.pose.position.y);
         pos_ref.header.frame_id = name_space.substr(1, name_space.length()-1) + "/odom";
         pos_ref_publisher_->publish(pos_ref);
         //RCLCPP_INFO(this->get_logger(),"PUBLISHED!!!!!!! ");

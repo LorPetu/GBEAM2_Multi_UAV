@@ -12,7 +12,7 @@
 #include "gbeam2_interfaces/msg/vertex.hpp"
 #include "gbeam2_interfaces/msg/graph_edge.hpp"
 #include "gbeam2_interfaces/msg/poly_area.hpp"
-#include "gbeam2_interfaces/msg/reachability_graph.hpp"
+#include "gbeam2_interfaces/msg/graph.hpp"
 
 #include "gbeam2_interfaces/msg/status.hpp"
 #include "gbeam2_interfaces/msg/frontier_stamped.hpp"

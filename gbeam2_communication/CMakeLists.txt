@@ -20,6 +20,7 @@ set(DEPENDANCIES
   "tf2_ros"
   "tf2_geometry_msgs"
   "gbeam2_library"
+  "message_filters"
 
 )
 # Loop over each dependancy

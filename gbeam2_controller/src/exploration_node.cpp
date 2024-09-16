@@ -115,7 +115,8 @@ private:
     {
         graph = *graph_ptr;
         N = graph.nodes.size();
-        E = graph.nodes.size();
+        E = graph.edges.size();
+
     }
 
     void computeNewTarget()
@@ -141,7 +142,7 @@ private:
         }
         }
 
-        RCLCPP_INFO(this->get_logger(), "Target node (best): %d", best_node);
+        //RCLCPP_INFO(this->get_logger(), "Target node (best): %d", best_node);
 
         RCLCPP_INFO(this->get_logger(), "Computing path from %d to %d", last_target, best_node);
         std::vector<int> path = dijkstra(graph, last_target, best_node);

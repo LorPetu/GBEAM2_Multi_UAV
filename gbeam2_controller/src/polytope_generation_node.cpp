@@ -38,6 +38,9 @@ public:
     test_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud>(
     "gbeam/test", 1);
 
+    name_space = this->get_namespace();
+    name_space_id = name_space.back()- '0';
+
     // Initialize parameters
     // this->declare_parameter("rate", update_freq_);
     // this->declare_parameter("/gbeam_controller/polytope_generation_param/num_vertices", num_vertices_);
@@ -89,6 +92,9 @@ private:
   double start_dist ;
   double update_freq ;
   float obst_dist_min; 
+
+  std::string name_space;
+  int name_space_id;
 
   sensor_msgs::msg::LaserScan::SharedPtr scan;
 
@@ -221,6 +227,7 @@ private:
           
         gbeam2_interfaces::msg::FreePolygonStamped free_poly;
         free_poly.header = poly.header;
+        free_poly.robot_id = name_space_id;
 
         sensor_msgs::msg::ChannelFloat32 expGainChan, obstacleChan;
         expGainChan.name = "exp_gain";

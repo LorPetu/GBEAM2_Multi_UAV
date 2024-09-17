@@ -32,8 +32,7 @@ endforeach(DEP IN LISTS DEPENDANCIES)
 
 # ######### EXECUTABLES ##############
 set(EXECUTABLES
-  partial_graph_transmitter
-  partial_graph_receiver
+  partial_graph_merger
   status_transmitter
   status_receiver
 )

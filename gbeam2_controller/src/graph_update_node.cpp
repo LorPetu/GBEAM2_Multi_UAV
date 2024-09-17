@@ -48,6 +48,9 @@ public:
     GraphUpdateNode() : Node("graph_update") 
     {
         name_space = this->get_namespace();
+        name_space_id = name_space.back()- '0';
+        RCLCPP_INFO(this->get_logger(), "namespace: %s ",name_space.c_str());
+        RCLCPP_INFO(this->get_logger(), "namespace_id: %d",name_space_id);
         poly_sub_ = this->create_subscription<gbeam2_interfaces::msg::FreePolygonStamped>(
             "gbeam/free_polytope", 1, std::bind(&GraphUpdateNode::polyCallback, this, std::placeholders::_1));
 
@@ -129,6 +132,7 @@ private:
     
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::string name_space;
+    int name_space_id;
 
     gbeam2_interfaces::msg::Graph graph;
 
@@ -158,6 +162,15 @@ private:
             std::this_thread::sleep_for(std::chrono::seconds(1));
             return;
         }
+        
+        
+        if(poly_ptr->robot_id!=name_space_id){
+            graph.last_updater_id = poly_ptr->robot_id;
+            is_changed = true;
+            RCLCPP_INFO(this->get_logger(), "I received some nodes not mine!");
+        } else {
+            graph.last_updater_id = name_space_id;
+        }
 
 
         // ####################################################
@@ -171,7 +184,6 @@ private:
             vert = vert_transform(vert, l2g_tf); //change coordinates to global position
 
             float vert_dist = vert_graph_distance_noobstacle(graph, vert);
-
             // vert = applyBoundary(vert, limit_xi, limit_xs, limit_yi, limit_ys);
             if (vert_dist > node_dist_open)
             {

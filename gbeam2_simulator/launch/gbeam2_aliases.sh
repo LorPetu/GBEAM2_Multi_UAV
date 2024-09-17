@@ -11,4 +11,7 @@ alias teleop='ros2 run turtlebot3_teleop teleop_keyboard'
 alias poly_gen='ros2 launch gbeam2_controller polytope_gen.launch.py'
 alias poly_draw='ros2 run gbeam2_ground poly_drawer'
 
+ros_debug(){
+    colcon build --packages-select "$1" --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
+}
 

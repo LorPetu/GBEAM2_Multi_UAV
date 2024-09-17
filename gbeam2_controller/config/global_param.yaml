@@ -9,7 +9,7 @@
     dist_step: 0.05  # m     #0.1
     start_dist: 0.15 #0.15  # m
     obstacle_d_thr: 0.05    # 0.05  # m
-    safe_dist: 0.2   # m
+    safe_dist: 0.3   # m
     obst_dist_min: 0.1 #m
 
 /**/graph_update:
@@ -31,7 +31,7 @@
     limit_yi:  -2.5             #-1.0
     limit_ys: 2.5               #1.0
     distance_exp: 4.0
-    reached_tol: 0.1
+    reached_tol: 0.2
 
 
 

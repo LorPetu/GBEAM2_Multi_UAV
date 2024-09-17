@@ -115,7 +115,7 @@ private:
     {
         graph = *graph_ptr;
         N = graph.nodes.size();
-        E = graph.nodes.size();
+        E = graph.edges.size();
     }
 
     void computeNewTarget()

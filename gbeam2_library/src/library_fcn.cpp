@@ -619,7 +619,7 @@ std::vector<std::vector<float>> GraphAdj2matrix(const gbeam2_interfaces::msg::Gr
 void addNode(gbeam2_interfaces::msg::Graph& graph, const gbeam2_interfaces::msg::Vertex& vert)
 {
     // Add vertex to the graph
-    graph.nodes.push_back(vert); 
+    graph.nodes.push_back(vert);
 
     // Update adjacency matrix
     int N = graph.adj_matrix.size;
@@ -631,6 +631,12 @@ void addNode(gbeam2_interfaces::msg::Graph& graph, const gbeam2_interfaces::msg:
         for (int j = 0; j < N; ++j) {
             new_data[i * (N + 1) + j] = graph.adj_matrix.data[i * N + j];
         }
+    }
+
+    // Initialize new row and column
+    for (int i = 0; i < N + 1; ++i) {
+        new_data[i * (N + 1) + N] = -1.0f;  // New column
+        new_data[N * (N + 1) + i] = -1.0f;  // New row
     }
 
     // Replace old data with new data

@@ -42,6 +42,13 @@
         </constraints>
       </ode>
     </physics>
+    
+    <model name="turtlebot3_dqn_world">
+      <static>1</static>
+      <include>
+        <uri>model://turtlebot3_dqn_world</uri>
+      </include>
+    </model>
 
   </world>
 </sdf>

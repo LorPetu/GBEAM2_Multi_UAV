@@ -43,5 +43,20 @@
       </ode>
     </physics>
 
+    <model name="turtlebot3_dqn_world">
+      <static>1</static>
+      <include>
+        <uri>model://turtlebot3_dqn_world</uri>
+      </include>
+    </model>
+
+    <model name="turtlebot3_dqn_obstacles">
+      <plugin name="obstacles" filename="libobstacles.so"/>
+      <allow_auto_disable>1</allow_auto_disable>
+      <include>
+        <uri>model://turtlebot3_dqn_world/obstacles</uri>
+      </include>
+    </model>
+
   </world>
 </sdf>

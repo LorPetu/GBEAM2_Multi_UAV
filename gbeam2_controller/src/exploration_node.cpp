@@ -119,52 +119,84 @@ private:
     }
 
     void computeNewTarget()
+{
+    geometry_msgs::msg::PoseStamped pos_ref;
+
+    // Use the actual size of the graph
+    size_t N = graph.nodes.size();
+
+    if (N == 0) {
+        RCLCPP_WARN(this->get_logger(), "Graph is empty. Cannot compute new target.");
+        return;
+    }
+
+    if (last_target >= N) {
+        RCLCPP_WARN(this->get_logger(), "Invalid last_target (%d). Resetting to 0.", last_target);
+        last_target = 0;
+    }
+
+    float max_reward = 0;
+    int best_node = 0;
+    std::vector<float> dist(N, std::numeric_limits<float>::max());
+
+    try {
+        shortestDistances(graph, dist.data(), last_target);
+    } catch (const std::exception& e) {
+        RCLCPP_ERROR(this->get_logger(), "Error in shortestDistances: %s", e.what());
+        return;
+    }
+
+    for(size_t n = 0; n < N; n++)
     {
-        geometry_msgs::msg::PoseStamped pos_ref;
-
-        float max_reward = 0;
-        int best_node = 0;
-        float dist[N];
-
-        shortestDistances(graph, dist, last_target);
-
-        for(int n=0; n<N; n++)
+        if(graph.nodes[n].is_reachable)
         {
-        if(graph.nodes[n].is_reachable)  // Choose only reachable targets
-        {
-            float reward = graph.nodes[n].gain / pow(dist[n], distance_exp);
+            if (dist[n] == std::numeric_limits<float>::max()) {
+                continue;  // Skip unreachable nodes
+            }
+            float reward = graph.nodes[n].gain / std::pow(dist[n], distance_exp);
             if(reward > max_reward)
             {
-            max_reward = reward;
-            best_node = n;
+                max_reward = reward;
+                best_node = n;
             }
         }
-        }
+    }
 
-        RCLCPP_INFO(this->get_logger(), "Target node (best): %d", best_node);
+    RCLCPP_INFO(this->get_logger(), "Target node (best): %d", best_node);
 
-        RCLCPP_INFO(this->get_logger(), "Computing path from %d to %d", last_target, best_node);
-        std::vector<int> path = dijkstra(graph, last_target, best_node);
+    RCLCPP_INFO(this->get_logger(), "Computing path from %d to %d", last_target, best_node);
+    std::vector<int> path;
+    try {
+        path = dijkstra(graph, last_target, best_node);
+    } catch (const std::exception& e) {
+        RCLCPP_ERROR(this->get_logger(), "Error in dijkstra: %s", e.what());
+        return;
+    }
 
-        std::string path_str;
-        for (int i=0; i<path.size(); i++)
-        path_str = path_str + std::to_string(path[i]) + "-";
-        RCLCPP_INFO(this->get_logger(), "New path is: %s", path_str.c_str());
+    std::string path_str;
+    for (int node : path) {
+        path_str += std::to_string(node) + "-";
+    }
+    RCLCPP_INFO(this->get_logger(), "New path is: %s", path_str.c_str());
 
-        if (path.size() > 1) last_target = path[1];
+    if (path.size() > 1) {
+        last_target = path[1];
+    } else {
+        RCLCPP_WARN(this->get_logger(), "Path is too short. Keeping current target.");
+    }
 
+    if (last_target < N) {
         gbeam2_interfaces::msg::Vertex vert = applyBoundary(graph.nodes[last_target], limit_xi, limit_xs, limit_yi, limit_ys);
-        //RCLCPP_INFO(this->get_logger(),"applyBoundary executed ");
         last_target_vertex = vert;
 
         pos_ref.pose.position = vertex2point(vert);
-        //RCLCPP_INFO(this->get_logger(),"vertex to point executed ");
         pos_ref.pose.position.z = mapping_z;
-        //RCLCPP_INFO(this->get_logger()," publish pos ref: x: %f y: %f",pos_ref.pose.position.x,pos_ref.pose.position.y);
         pos_ref.header.frame_id = name_space.substr(1, name_space.length()-1) + "/odom";
         pos_ref_publisher_->publish(pos_ref);
-        //RCLCPP_INFO(this->get_logger(),"PUBLISHED!!!!!!! ");
+    } else {
+        RCLCPP_ERROR(this->get_logger(), "Invalid last_target after path computation: %d", last_target);
     }
+}
         
     void explorationCallback(){
         geometry_msgs::msg::TransformStamped l2g_tf;

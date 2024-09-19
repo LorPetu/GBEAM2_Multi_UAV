@@ -13,6 +13,7 @@
 #include "geometry_msgs/msg/vector3.hpp"
 #include "geometry_msgs/msg/transform_stamped.hpp"
 #include "visualization_msgs/msg/marker.hpp"
+#include "visualization_msgs/msg/marker_array.hpp"
 #include "std_msgs/msg/color_rgba.hpp"
 
 #include "gbeam2_interfaces/msg/vertex.hpp"
@@ -38,6 +39,7 @@ public:
         graph_nodes_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("gbeam_visualization/graph_nodes", 1);
         graph_normals_pub = this->create_publisher<visualization_msgs::msg::Marker>("gbeam_visualization/graph_nodes_normals", 1);
         graph_edges_pub = this->create_publisher<visualization_msgs::msg::Marker>("gbeam_visualization/graph_edges", 1);
+        graph_node_labels_pub = this->create_publisher<visualization_msgs::msg::MarkerArray>("gbeam_visualization/graph_node_labels", 1);
 
         graph_sub = this->create_subscription<gbeam2_interfaces::msg::Graph>(
             "gbeam/reachability_graph", 1,
@@ -59,79 +61,87 @@ private:
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr graph_normals_pub;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr graph_edges_pub;
     rclcpp::Subscription<gbeam2_interfaces::msg::Graph>::SharedPtr graph_sub;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr graph_node_labels_pub;
 
     float scaling;
-    sensor_msgs::msg::PointCloud2 pointCloudTOpointCloud2(const sensor_msgs::msg::PointCloud msg)
+     sensor_msgs::msg::PointCloud2 pointCloudTOpointCloud2(const sensor_msgs::msg::PointCloud msg)
     {
-            sensor_msgs::msg::PointCloud2 pointcloud2_msg;
-            pointcloud2_msg.header = msg.header;
-            pointcloud2_msg.height = 1;
-            pointcloud2_msg.width = msg.points.size();
-            pointcloud2_msg.is_dense = false;
-            pointcloud2_msg.is_bigendian = false;
-            
+        sensor_msgs::msg::PointCloud2 pointcloud2_msg;
+        pointcloud2_msg.header = msg.header;
+        pointcloud2_msg.height = 1;
+        pointcloud2_msg.width = msg.points.size();
+        pointcloud2_msg.is_dense = false;
+        pointcloud2_msg.is_bigendian = false;
+        
         // Define fields
-            pointcloud2_msg.fields.resize(6); // x, y, z, exp_gain, is_obstacle, is_completely_connected
-            pointcloud2_msg.fields[0].name = "x";
-            pointcloud2_msg.fields[0].offset = 0;
-            pointcloud2_msg.fields[0].datatype = sensor_msgs::msg::PointField::FLOAT32;
-            pointcloud2_msg.fields[0].count = 1;
-            
-            pointcloud2_msg.fields[1].name = "y";
-            pointcloud2_msg.fields[1].offset = 4;
-            pointcloud2_msg.fields[1].datatype = sensor_msgs::msg::PointField::FLOAT32;
-            pointcloud2_msg.fields[1].count = 1;
-            
-            pointcloud2_msg.fields[2].name = "z";
-            pointcloud2_msg.fields[2].offset = 8;
-            pointcloud2_msg.fields[2].datatype = sensor_msgs::msg::PointField::FLOAT32;
-            pointcloud2_msg.fields[2].count = 1;
-            
-            pointcloud2_msg.fields[3].name = "exp_gain";
-            pointcloud2_msg.fields[3].offset = 12;
-            pointcloud2_msg.fields[3].datatype = sensor_msgs::msg::PointField::FLOAT32;
-            pointcloud2_msg.fields[3].count = 1;
+        pointcloud2_msg.fields.resize(7); // x, y, z, exp_gain, is_obstacle, is_completely_connected, node_id
+        pointcloud2_msg.fields[0].name = "x";
+        pointcloud2_msg.fields[0].offset = 0;
+        pointcloud2_msg.fields[0].datatype = sensor_msgs::msg::PointField::FLOAT32;
+        pointcloud2_msg.fields[0].count = 1;
+        
+        pointcloud2_msg.fields[1].name = "y";
+        pointcloud2_msg.fields[1].offset = 4;
+        pointcloud2_msg.fields[1].datatype = sensor_msgs::msg::PointField::FLOAT32;
+        pointcloud2_msg.fields[1].count = 1;
+        
+        pointcloud2_msg.fields[2].name = "z";
+        pointcloud2_msg.fields[2].offset = 8;
+        pointcloud2_msg.fields[2].datatype = sensor_msgs::msg::PointField::FLOAT32;
+        pointcloud2_msg.fields[2].count = 1;
+        
+        pointcloud2_msg.fields[3].name = "exp_gain";
+        pointcloud2_msg.fields[3].offset = 12;
+        pointcloud2_msg.fields[3].datatype = sensor_msgs::msg::PointField::FLOAT32;
+        pointcloud2_msg.fields[3].count = 1;
 
-            pointcloud2_msg.fields[4].name = "is_obstacle";
-            pointcloud2_msg.fields[4].offset = 16;
-            pointcloud2_msg.fields[4].datatype = sensor_msgs::msg::PointField::UINT8;
-            pointcloud2_msg.fields[4].count = 1;
+        pointcloud2_msg.fields[4].name = "is_obstacle";
+        pointcloud2_msg.fields[4].offset = 16;
+        pointcloud2_msg.fields[4].datatype = sensor_msgs::msg::PointField::UINT8;
+        pointcloud2_msg.fields[4].count = 1;
 
-            pointcloud2_msg.fields[5].name = "is_completely_connected";
-            pointcloud2_msg.fields[5].offset = 17;
-            pointcloud2_msg.fields[5].datatype = sensor_msgs::msg::PointField::UINT8;
-            pointcloud2_msg.fields[5].count = 1;
+        pointcloud2_msg.fields[5].name = "is_completely_connected";
+        pointcloud2_msg.fields[5].offset = 17;
+        pointcloud2_msg.fields[5].datatype = sensor_msgs::msg::PointField::UINT8;
+        pointcloud2_msg.fields[5].count = 1;
 
-            pointcloud2_msg.point_step = 18;  // 3 fields x 4 bytes/field + 2 fields x 1 byte/field
-            pointcloud2_msg.row_step = pointcloud2_msg.point_step * pointcloud2_msg.width;
-            
-            // Reserve memory for the point data
-            pointcloud2_msg.data.resize(pointcloud2_msg.row_step * pointcloud2_msg.height);
-            
-            sensor_msgs::PointCloud2Iterator<float> iter_x(pointcloud2_msg, "x");
-            sensor_msgs::PointCloud2Iterator<float> iter_y(pointcloud2_msg, "y");
-            sensor_msgs::PointCloud2Iterator<float> iter_z(pointcloud2_msg, "z");
-            sensor_msgs::PointCloud2Iterator<float> iter_exp_gain(pointcloud2_msg, "exp_gain");
-            sensor_msgs::PointCloud2Iterator<uint8_t> iter_is_obstacle(pointcloud2_msg, "is_obstacle");
-            sensor_msgs::PointCloud2Iterator<uint8_t> iter_is_connected(pointcloud2_msg, "is_completely_connected");
-            
-            for (size_t i = 0; i < msg.points.size(); ++i, ++iter_x, ++iter_y, ++iter_z, ++iter_exp_gain, ++iter_is_obstacle, ++iter_is_connected)
-            {
+        pointcloud2_msg.fields[6].name = "node_id";
+        pointcloud2_msg.fields[6].offset = 18;
+        pointcloud2_msg.fields[6].datatype = sensor_msgs::msg::PointField::UINT32;
+        pointcloud2_msg.fields[6].count = 1;
+
+        pointcloud2_msg.point_step = 22;  // 3 fields x 4 bytes/field + 2 fields x 1 byte/field + 1 field x 4 bytes/field
+        pointcloud2_msg.row_step = pointcloud2_msg.point_step * pointcloud2_msg.width;
+        
+        // Reserve memory for the point data
+        pointcloud2_msg.data.resize(pointcloud2_msg.row_step * pointcloud2_msg.height);
+        
+        sensor_msgs::PointCloud2Iterator<float> iter_x(pointcloud2_msg, "x");
+        sensor_msgs::PointCloud2Iterator<float> iter_y(pointcloud2_msg, "y");
+        sensor_msgs::PointCloud2Iterator<float> iter_z(pointcloud2_msg, "z");
+        sensor_msgs::PointCloud2Iterator<float> iter_exp_gain(pointcloud2_msg, "exp_gain");
+        sensor_msgs::PointCloud2Iterator<uint8_t> iter_is_obstacle(pointcloud2_msg, "is_obstacle");
+        sensor_msgs::PointCloud2Iterator<uint8_t> iter_is_connected(pointcloud2_msg, "is_completely_connected");
+        sensor_msgs::PointCloud2Iterator<uint32_t> iter_node_id(pointcloud2_msg, "node_id");
+        
+        for (size_t i = 0; i < msg.points.size(); ++i, ++iter_x, ++iter_y, ++iter_z, ++iter_exp_gain, ++iter_is_obstacle, ++iter_is_connected, ++iter_node_id)
+        {
             *iter_x = msg.points[i].x;
             *iter_y = msg.points[i].y;
             *iter_z = msg.points[i].z;
             *iter_exp_gain = msg.channels[0].values[i];
             *iter_is_obstacle = static_cast<uint8_t>(msg.channels[1].values[i]);
             *iter_is_connected = static_cast<uint8_t>(msg.channels[2].values[i]);
-            }
-            
-            // return PointCloud2 message
-            return pointcloud2_msg;
+            *iter_node_id = static_cast<uint32_t>(msg.channels[3].values[i]);
+        }
         
+        // return PointCloud2 message
+        return pointcloud2_msg;
     };
 
     void graphCallback(const gbeam2_interfaces::msg::Graph::SharedPtr graph_ptr)
     {
+        std::string target_frame = name_space.substr(1, name_space.length()-1) + "/odom"; //becasue lookupTransform doesn't allow "/" as first character
         
 
         // define colors
@@ -147,12 +157,16 @@ private:
 
         float normal_length = 0.2 * scaling;
 
+        //initialize node_labels
+        visualization_msgs::msg::MarkerArray text_markers;
+
         //initialize node_points for /graph_nodes
         sensor_msgs::msg::PointCloud node_points;
-        sensor_msgs::msg::ChannelFloat32 expGainChan, obstacleChan, connectedChan;
+        sensor_msgs::msg::ChannelFloat32 expGainChan, obstacleChan, connectedChan, nodeIdChan;
         expGainChan.name = "exploration_gain";
         obstacleChan.name = "is_obstacle";
         connectedChan.name = "is_compl_connected";
+        nodeIdChan.name = "node_id";
 
         //initialize normals, for /graph_nodes_normals
         visualization_msgs::msg::Marker nodes_normals;
@@ -174,6 +188,25 @@ private:
             expGainChan.values.push_back(graph_ptr->nodes[n].gain);
             obstacleChan.values.push_back(graph_ptr->nodes[n].is_obstacle);
             connectedChan.values.push_back(graph_ptr->nodes[n].is_completely_connected);
+            nodeIdChan.values.push_back(static_cast<float>(n));  // Add node ID
+
+            // Create a text marker for each node
+            visualization_msgs::msg::Marker text_marker;
+            text_marker.header.frame_id = target_frame;
+            text_marker.ns = "node_labels";
+            text_marker.id = n;
+            text_marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+            text_marker.action = visualization_msgs::msg::Marker::ADD;
+            text_marker.pose.position.x = point.x;
+            text_marker.pose.position.y = point.y;
+            text_marker.pose.position.z = point.z + 0.1; // Offset the text slightly above the node
+            text_marker.scale.z = 0.1 * scaling; // Text height
+            text_marker.color.r = 1.0;
+            text_marker.color.g = 1.0;
+            text_marker.color.b = 1.0;
+            text_marker.color.a = 1.0;
+            text_marker.text = std::to_string(n);
+            text_markers.markers.push_back(text_marker);
 
             if (graph_ptr->nodes[n].is_obstacle)
             {
@@ -218,8 +251,9 @@ private:
         node_points.channels.push_back(expGainChan);
         node_points.channels.push_back(obstacleChan);
         node_points.channels.push_back(connectedChan);
+        node_points.channels.push_back(nodeIdChan);  // Add node ID channel
 
-        std::string target_frame = name_space.substr(1, name_space.length()-1) + "/odom"; //becasue lookupTransform doesn't allow "/" as first character
+        
 
         node_points.header.frame_id = target_frame;
         edges_markers.header.frame_id = target_frame;
@@ -230,6 +264,7 @@ private:
         graph_nodes_pub->publish(node_points_2);
         graph_normals_pub->publish(nodes_normals);
         graph_edges_pub->publish(edges_markers);
+        graph_node_labels_pub->publish(text_markers);
     }
 };
 

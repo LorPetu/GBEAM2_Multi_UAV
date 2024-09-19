@@ -243,6 +243,11 @@ private:
             if (isInsideReachable(polyGlobal, graph.nodes[i])) //CAMBIATO QUA IMPORTANTE
             inObstaclesId.push_back(i);
 
+        /*std::string obstacle_string;
+        for (int node : inObstaclesId) {
+        obstacle_string += std::to_string(node) + "-";
+        }
+        //RCLCPP_INFO(this->get_logger(),"inObstacleId: %s",obstacle_string.c_str());*/
         // create edges between nodes inside poly_obstacles
         for (int i=0; i<inObstaclesId.size(); i++)
         {

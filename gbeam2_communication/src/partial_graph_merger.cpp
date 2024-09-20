@@ -82,6 +82,8 @@ public:
     // Initialize vectors with the correct size
     updateBuffer.resize(N_robot);
     graph_updates_CLIENTS.resize(N_robot);
+    last_node_indexes.resize(N_robot);
+    last_edge_indexes.resize(N_robot);
 
     RCLCPP_INFO(this->get_logger(),"1) Size of clients: %d",graph_updates_CLIENTS.size());
 
@@ -129,6 +131,8 @@ private:
     bool data_received_ = false;
     gbeam2_interfaces::srv::GraphUpdate::Response updateResponse;
 
+    std::vector<int> last_node_indexes;
+    std::vector<int> last_edge_indexes;
     std::vector<gbeam2_interfaces::msg::Graph> updateBuffer;
 
     geometry_msgs::msg::TransformStamped getTransform(std::string target_frame,std::string source_frame){
@@ -149,13 +153,14 @@ private:
     void serverCallback(const std::shared_ptr<gbeam2_interfaces::srv::GraphUpdate::Request> request,
                         std::shared_ptr<gbeam2_interfaces::srv::GraphUpdate::Response> response)
     {
+        int req_robot_id = request->update_request.robot_id;
         std::unique_lock<std::mutex> lock(mutex_);
         RCLCPP_INFO(this->get_logger(), "Service received");
         //RCLCPP_INFO(this->get_logger(), "I'm receiving %ld nodes from: %d", request->update_request.nodes.size(), request->update_request.robot_id);
 
         // Prepare and publish the fake polygon
         gbeam2_interfaces::msg::FreePolygonStamped fake_poly;
-        fake_poly.robot_id = request->update_request.robot_id;
+        fake_poly.robot_id = req_robot_id;
         std::string target_frame = name_space.substr(1, name_space.length()-1) + "/odom";
         fake_poly.header.frame_id = target_frame;
         fake_poly.polygon.vertices_reachable = request->update_request.nodes;
@@ -175,7 +180,10 @@ private:
 
         if (status) {
             // Data received within the timeout period
-            RCLCPP_INFO(this->get_logger(),"Update response success: %d (false is:%d)",updateResponse.success, false);
+            //RCLCPP_INFO(this->get_logger(),"Update response success: %d (false is:%d)",updateResponse.success, false);
+            response->update_response = updateBuffer[req_robot_id];
+            last_node_indexes[req_robot_id]=updateBuffer[req_robot_id].nodes.back().id;
+            last_edge_indexes[req_robot_id]=updateBuffer[req_robot_id].edges.back().id;
             response->success = updateResponse.success;
             RCLCPP_WARN(this->get_logger(), "Data received");
            
@@ -190,9 +198,15 @@ private:
     void switchCallback(const gbeam2_interfaces::msg::Graph::SharedPtr graph)
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        //RCLCPP_INFO(this->get_logger(), "MERGER:: last updater_id: %d namespace_id: %d", graph->last_updater_id, name_space_id);
-
-        if (graph->last_updater_id != name_space_id) {
+        
+        for (int i = 0; i < N_robot; i++)
+        {
+            RCLCPP_INFO(this->get_logger(), "MERGER:: last nodes updated: %d last_edge_updated: %d", last_node_indexes[i], last_edge_indexes[i]);
+            if (i!=name_space_id) updateBuffer[graph->last_updater_id]=compareUpdates(graph,last_node_indexes[i],last_edge_indexes[i]);
+        }
+        
+        
+        if (graph->last_updater_id != name_space_id) { 
             updateResponse.success = true;
             data_received_ = true;
             cv_.notify_one();
@@ -209,6 +223,14 @@ private:
         timer_ptr_->cancel();
     }
 
+    gbeam2_interfaces::msg::Graph compareUpdates(gbeam2_interfaces::msg::Graph::SharedPtr graph2compare, int last_node_index, int last_edge_index){
+        // Retrieve all the new nodes after last_node_index
+        gbeam2_interfaces::msg::Graph result;
+        result.nodes = std::vector<gbeam2_interfaces::msg::Vertex>(graph2compare->nodes.begin() + last_node_index, graph2compare->nodes.end());
+        result.edges = std::vector<gbeam2_interfaces::msg::GraphEdge>(graph2compare->edges.begin() + last_edge_index, graph2compare->edges.end());
+        result.adj_matrix=graph2compare->adj_matrix;
+        return result;
+    }
 };
 
 int main(int argc, char **argv)
@@ -218,7 +240,6 @@ int main(int argc, char **argv)
 
     rclcpp::executors::MultiThreadedExecutor executor;
     executor.add_node(node);
-    RCLCPP_INFO(node->get_logger(), "Starting client node, shut down with CTRL-C");
     executor.spin();
     rclcpp::spin(node);
     rclcpp::shutdown();

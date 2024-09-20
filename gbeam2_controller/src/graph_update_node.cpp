@@ -49,6 +49,9 @@ public:
     {
         name_space = this->get_namespace();
         name_space_id = name_space.back()- '0';
+        graph.robot_id = name_space_id;
+        graph.last_updater_id = name_space_id;
+        
         RCLCPP_INFO(this->get_logger(), "namespace: %s ",name_space.c_str());
         RCLCPP_INFO(this->get_logger(), "namespace_id: %d",name_space_id);
         poly_sub_ = this->create_subscription<gbeam2_interfaces::msg::FreePolygonStamped>(
@@ -56,6 +59,10 @@ public:
 
         graph_pub_ =this->create_publisher<gbeam2_interfaces::msg::Graph>(
           "gbeam/reachability_graph",1);
+
+        external_poly_sub_ = this->create_subscription<gbeam2_interfaces::msg::FreePolygonStamped>(
+            "/external_nodes", 1, std::bind(&GraphUpdateNode::extNodesCallback, this, std::placeholders::_1));
+
         
         // SERVICE
         status_server_ = this->create_service<gbeam2_interfaces::srv::SetMappingStatus>(
@@ -125,6 +132,8 @@ private:
     double obstacle_margin;
     double safe_dist;
 
+    bool received_ext_nodes;
+
     
     double limit_xi, limit_xs, limit_yi, limit_ys;
 
@@ -134,11 +143,20 @@ private:
     std::string name_space;
     int name_space_id;
 
+    gbeam2_interfaces::msg::FreePolygonStamped external_nodes;
+
     gbeam2_interfaces::msg::Graph graph;
 
     rclcpp::Publisher<gbeam2_interfaces::msg::Graph>::SharedPtr graph_pub_;
     rclcpp::Subscription<gbeam2_interfaces::msg::FreePolygonStamped>::SharedPtr poly_sub_;
+    rclcpp::Subscription<gbeam2_interfaces::msg::FreePolygonStamped>::SharedPtr external_poly_sub_;
     rclcpp::Service<gbeam2_interfaces::srv::SetMappingStatus>::SharedPtr status_server_;
+
+    void extNodesCallback(const std::shared_ptr<gbeam2_interfaces::msg::FreePolygonStamped> received_nodes){
+        // Each time i receive external nodes I store them 
+        external_nodes = *received_nodes;
+        received_ext_nodes = true;
+    }
 
     void polyCallback(const std::shared_ptr<gbeam2_interfaces::msg::FreePolygonStamped> poly_ptr)
     {
@@ -163,11 +181,13 @@ private:
             return;
         }
         
-        
-        if(poly_ptr->robot_id!=name_space_id){
-            graph.last_updater_id = poly_ptr->robot_id;
+        //std::is_empty<gbeam2_interfaces::msg::FreePolygonStamped>
+        if(received_ext_nodes){
+            graph.last_updater_id = external_nodes.robot_id;
             is_changed = true;
             RCLCPP_INFO(this->get_logger(), "I received some nodes not mine!");
+            received_ext_nodes = false;
+
         } else {
             graph.last_updater_id = name_space_id;
         }

@@ -40,7 +40,7 @@ public:
 
     service_cb_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);        
     client_cb_group_ = service_cb_group_; //this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    timer_cb_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    timer_cb_group_ = client_cb_group_;
 
     rclcpp::SubscriptionOptions sub_options;
     sub_options.callback_group = client_cb_group_;
@@ -58,7 +58,9 @@ public:
     //SERVICE 
     graph_updates_service_ = this->create_service<gbeam2_interfaces::srv::GraphUpdate>(
         "gbeam/getGraphUpdates",std::bind(&GraphMergerNode::serverCallback,this, std::placeholders::_1, std::placeholders::_2),rmw_qos_profile_services_default,service_cb_group_);
-
+    
+    timer_ptr_ = this->create_wall_timer(2s, std::bind(&GraphMergerNode::timerCallback, this),
+                                            timer_cb_group_);
 
     //Get namespace
     name_space = this->get_namespace();
@@ -83,6 +85,7 @@ private:
     rclcpp::Publisher<gbeam2_interfaces::msg::FreePolygonStamped>::SharedPtr fake_poly_pub_;
     rclcpp::Service<gbeam2_interfaces::srv::GraphUpdate>::SharedPtr  graph_updates_service_;
 
+    rclcpp::TimerBase::SharedPtr timer_ptr_;
 
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
@@ -146,13 +149,13 @@ private:
             response->success = false;
             RCLCPP_WARN(this->get_logger(), "Timeout waiting for graph update");
         }
+        this->timer_ptr_->reset();
     }
 
     void switchCallback(const gbeam2_interfaces::msg::Graph::SharedPtr graph)
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        RCLCPP_INFO(this->get_logger(), "MERGER:: last updater_id: %d namespace_id: %d", 
-                    graph->last_updater_id, name_space_id);
+        //RCLCPP_INFO(this->get_logger(), "MERGER:: last updater_id: %d namespace_id: %d", graph->last_updater_id, name_space_id);
 
         if (graph->last_updater_id != name_space_id) {
             updateResponse.success = true;
@@ -161,12 +164,15 @@ private:
             RCLCPP_INFO(this->get_logger(), "updateResponse processing...");
         } else {
             // This is our own update, publish it
-            RCLCPP_INFO(this->get_logger(), "Publishing on my own topic...");
+            //RCLCPP_INFO(this->get_logger(), "Publishing on my own topic...");
             merged_graph_pub_->publish(*graph);
         }
     }
 
-
+    void timerCallback(){
+        RCLCPP_INFO(this->get_logger(),"Send a request...");
+        timer_ptr_->cancel();
+    }
 
 };
 

@@ -39,34 +39,62 @@ public:
     {
 
     service_cb_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);        
-    client_cb_group_ = service_cb_group_; //this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    timer_cb_group_ = client_cb_group_;
+    client_cb_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    timer_cb_group_ = service_cb_group_;
 
     rclcpp::SubscriptionOptions sub_options;
-    sub_options.callback_group = client_cb_group_;
+    sub_options.callback_group = service_cb_group_;
 
-    //SUBSCRIBED TOPICS
+    // SUBSCRIBED TOPICS
     graph_subscriber_ = this->create_subscription<gbeam2_interfaces::msg::Graph>(
                 "gbeam/reachability_graph", 1, std::bind(&GraphMergerNode::switchCallback, this, std::placeholders::_1),sub_options);
 
-    //PUBLISHING TOPICS
+    // PUBLISHING TOPICS
     merged_graph_pub_ = this->create_publisher<gbeam2_interfaces::msg::Graph>(
                 "gbeam/merged_graph", 1);
     fake_poly_pub_ = this->create_publisher<gbeam2_interfaces::msg::FreePolygonStamped>(
                 "/external_nodes", 1);
 
-    //SERVICE 
+    // SERVICE 
     graph_updates_service_ = this->create_service<gbeam2_interfaces::srv::GraphUpdate>(
-        "gbeam/getGraphUpdates",std::bind(&GraphMergerNode::serverCallback,this, std::placeholders::_1, std::placeholders::_2),rmw_qos_profile_services_default,service_cb_group_);
+        "getGraphUpdates",std::bind(&GraphMergerNode::serverCallback,this, std::placeholders::_1, std::placeholders::_2),rmw_qos_profile_services_default,service_cb_group_);
     
     timer_ptr_ = this->create_wall_timer(2s, std::bind(&GraphMergerNode::timerCallback, this),
                                             timer_cb_group_);
+    timer_ptr_->cancel();
 
-    //Get namespace
+    // Get namespace
     name_space = this->get_namespace();
     name_space_id = name_space.back()- '0';
 
-    //Initialize parameters
+    // Initialize parameters
+    this->declare_parameter<int>("N_robot",0);
+    this->declare_parameter<double>("communication_range",0.0);
+
+    // Get parameters
+    N_robot = this->get_parameter("N_robot").get_parameter_value().get<int>();
+    wifi_range = this->get_parameter("communication_range").get_parameter_value().get<double>();
+
+    RCLCPP_INFO(this->get_logger(),"############# PARAMETERS OF PARTIAL_GRAPH_MERGER: ############# ");
+    RCLCPP_INFO(this->get_logger(),"############# (for %s) ############# ",name_space.c_str());
+    RCLCPP_INFO(this->get_logger(),"1) Number of robots: %d",N_robot);
+    RCLCPP_INFO(this->get_logger(),"1) Number of robots: %f",wifi_range);
+    // Initialize vectors with the correct size
+    updateBuffer.resize(N_robot);
+    graph_updates_CLIENTS.resize(N_robot);
+
+    RCLCPP_INFO(this->get_logger(),"1) Size of clients: %d",graph_updates_CLIENTS.size());
+
+    // Create a client for each robot
+    std::string service_name;
+    for (size_t i = 0; i < N_robot; i++)
+    {   
+        service_name = "/robot"+std::to_string(i)+"/getGraphUpdates";
+        if (i!=name_space_id) graph_updates_CLIENTS[i]=this->create_client<gbeam2_interfaces::srv::GraphUpdate>(service_name);    
+        RCLCPP_INFO(this->get_logger(),"Initialize client: %s",service_name.c_str());     
+    }
+     
+
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
@@ -76,6 +104,10 @@ private:
     std::string name_space;
     int name_space_id;
 
+    // Parameters variables
+    int N_robot;
+    double wifi_range;
+
     rclcpp::CallbackGroup::SharedPtr service_cb_group_;        
     rclcpp::CallbackGroup::SharedPtr client_cb_group_;
     rclcpp::CallbackGroup::SharedPtr timer_cb_group_;
@@ -84,6 +116,7 @@ private:
     rclcpp::Publisher<gbeam2_interfaces::msg::Graph>::SharedPtr merged_graph_pub_;
     rclcpp::Publisher<gbeam2_interfaces::msg::FreePolygonStamped>::SharedPtr fake_poly_pub_;
     rclcpp::Service<gbeam2_interfaces::srv::GraphUpdate>::SharedPtr  graph_updates_service_;
+    std::vector<rclcpp::Client<gbeam2_interfaces::srv::GraphUpdate>::SharedPtr> graph_updates_CLIENTS;
 
     rclcpp::TimerBase::SharedPtr timer_ptr_;
 
@@ -95,6 +128,8 @@ private:
     std::condition_variable cv_;
     bool data_received_ = false;
     gbeam2_interfaces::srv::GraphUpdate::Response updateResponse;
+
+    std::vector<gbeam2_interfaces::msg::Graph> updateBuffer;
 
     geometry_msgs::msg::TransformStamped getTransform(std::string target_frame,std::string source_frame){
 

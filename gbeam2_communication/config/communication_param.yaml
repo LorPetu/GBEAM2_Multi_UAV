@@ -5,3 +5,4 @@
 /**:
   ros__parameters:
     communication_range : 5.0 
+    N_robot: 2

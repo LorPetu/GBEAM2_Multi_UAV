@@ -22,7 +22,12 @@ def generate_launch_description():
         package='gbeam2_communication',
         name='partial_graph_merger',
         executable='partial_graph_merger',
-        namespace=robot_prefix
+        namespace=robot_prefix,
+        parameters=[os.path.join(
+    get_package_share_directory('gbeam2_communication'),
+    'config',
+    'communication_param.yaml'
+    )]
     )
     
     ddrive = Node(

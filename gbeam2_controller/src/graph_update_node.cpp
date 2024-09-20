@@ -38,6 +38,7 @@
 
 #include "library_fcn.hpp"
 
+#define INF 100000
 //-------------------------------------------------------------------------------------------------------------
 
 
@@ -205,9 +206,21 @@ private:
 
             float vert_dist = vert_graph_distance_noobstacle(graph, vert);
             // vert = applyBoundary(vert, limit_xi, limit_xs, limit_yi, limit_ys);
-            if (vert_dist > node_dist_open)
+
+            /// ####### NEW PART FOR COMMUNICATION ############
+            float vert_ext_dist; 
+            if(received_ext_nodes && external_nodes.polygon.vertices_reachable.size()!=0){
+                gbeam2_interfaces::msg::Graph fake_graph;
+                fake_graph.nodes = external_nodes.polygon.vertices_reachable;
+                vert_ext_dist = vert_graph_distance_noobstacle(fake_graph, vert);
+            }
+            else{
+                vert_ext_dist = INF;
+            }
+            // ################################################
+
+            if (vert_dist > node_dist_open && vert_ext_dist> node_dist_open) // modified also this condition
             {
-                //RCLCPP_INFO(this->get_logger()," -------> entra nel primo if (vert_dist > node_dist_open)");
             vert.id = graph.nodes.size();
             vert.is_reachable = true;
             vert.gain ++;
@@ -219,10 +232,14 @@ private:
             addNode(graph,vert); //add vertex to the graph
             is_changed = true;
             }
+            else if (vert_ext_dist< node_dist_open)
+            {
+                RCLCPP_INFO(this->get_logger(),"REACHABLE Vertex %d wasn't added due to conflict with external nodes",i);
+            }
+            
         }
         for (int i=0; i<poly_ptr->polygon.vertices_obstacles.size(); i++)
         {
-            //RCLCPP_INFO(this->get_logger(),"entrato nel secondo for -------> ");
             gbeam2_interfaces::msg::Vertex vert = poly_ptr->polygon.vertices_obstacles[i];  //get vertex from polytope
             vert = vert_transform(vert, l2g_tf); //change coordinates to global position
 
@@ -230,20 +247,34 @@ private:
 
             float vert_dist = vert_graph_distance_obstacle(graph, vert);
 
-            if ((vert_dist > node_dist_min) && vert.is_obstacle)
+            /// ####### NEW PART FOR COMMUNICATION ############
+            float vert_ext_dist; 
+            if(received_ext_nodes && external_nodes.polygon.vertices_obstacles.size()!=0){
+                gbeam2_interfaces::msg::Graph fake_graph;
+                fake_graph.nodes = external_nodes.polygon.vertices_obstacles;
+                vert_ext_dist = vert_graph_distance_noobstacle(fake_graph, vert);
+            }
+            else{
+                vert_ext_dist = INF;
+            }
+            // #################################################
+            if ((vert_dist > node_dist_min && vert_ext_dist> node_dist_min) && vert.is_obstacle)
             {
-                //RCLCPP_INFO(this->get_logger()," -------> entra nel secondo if ((vert_dist > node_dist_min) && vert.is_obstacle))");
+                
             vert.id = graph.nodes.size();
             vert.gain ++;
             if (!isInBoundary(vert, limit_xi, limit_xs, limit_yi, limit_ys))
             {
-                //RCLCPP_INFO(this->get_logger()," -------> entra nel terzo if is boundary");
                 vert.is_reachable = false;
                 vert.gain = 0;
             }
 
             addNode(graph,vert);         //add vertex to the graph
             is_changed = true;
+            }
+            else if (vert_ext_dist< node_dist_open)
+            {
+                RCLCPP_INFO(this->get_logger(),"OBSTACLE Vertex %d wasn't added due to conflict with external nodes",i);
             }
         }
 
@@ -252,7 +283,6 @@ private:
         // ####################################################
         // ####### ---------- ADD GRAPH EDGES --------- #######
         // ####################################################
-        //RCLCPP_INFO(this->get_logger(),"####### ---------- ADD GRAPH EDGES --------- #######");
         
         //compute polygon in global coordinates
         gbeam2_interfaces::msg::FreePolygon polyGlobal = poly_transform(poly_ptr->polygon, l2g_tf);

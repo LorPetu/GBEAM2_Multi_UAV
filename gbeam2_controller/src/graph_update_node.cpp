@@ -61,7 +61,7 @@ public:
           "gbeam/reachability_graph",1);
 
         external_poly_sub_ = this->create_subscription<gbeam2_interfaces::msg::FreePolygonStamped>(
-            "/external_nodes", 1, std::bind(&GraphUpdateNode::extNodesCallback, this, std::placeholders::_1));
+            "external_nodes", 1, std::bind(&GraphUpdateNode::extNodesCallback, this, std::placeholders::_1));
 
         
         // SERVICE

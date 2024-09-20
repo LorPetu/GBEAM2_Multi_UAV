@@ -53,7 +53,7 @@ public:
     merged_graph_pub_ = this->create_publisher<gbeam2_interfaces::msg::Graph>(
                 "gbeam/merged_graph", 1);
     fake_poly_pub_ = this->create_publisher<gbeam2_interfaces::msg::FreePolygonStamped>(
-                "/external_nodes", 1);
+                "external_nodes", 1);
 
     // SERVICE 
     graph_updates_service_ = this->create_service<gbeam2_interfaces::srv::GraphUpdate>(

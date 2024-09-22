@@ -5,9 +5,12 @@
 #include "geometry_msgs/msg/point32.h"
 #include "geometry_msgs/msg/vector3.h"
 #include "sensor_msgs/msg/point_cloud.h"
+#include <cmath>
+#include <limits>
 
 // infinite for raytracing
 #define INF 100000
+#define eps 10e-9
 
 
 //*********************************************************************
@@ -866,3 +869,53 @@ std::vector<int> bestPath(gbeam2_interfaces::msg::Graph graph, int s, int t)
 
   return path;
 }
+
+
+//*********************************************************************
+//********************* PARTIAL_MERGER FUNCTIONS **********************
+//*********************************************************************
+
+
+
+bool isApproximatelyEqual(double a, double b){
+        return std::abs(a - b) <= eps * std::max({1.0, std::abs(a), std::abs(b)});
+    }
+
+bool hasVertexChanged(const gbeam2_interfaces::msg::Vertex& v1, 
+                          const gbeam2_interfaces::msg::Vertex& v2){
+        // Check owner of the node
+        if (v1.belong_to==v2.belong_to)
+        {
+          return true;
+        } else {
+          // Compare fundamental attributes
+          if (v1.id != v2.id) return true;
+          
+          // Compare positions with epsilon
+          if (!isApproximatelyEqual(v1.x, v2.x)) return true;
+          if (!isApproximatelyEqual(v1.y, v2.y)) return true;
+          if (!isApproximatelyEqual(v1.z, v2.z)) return true;
+          
+          // Compare other attributes
+          if (!isApproximatelyEqual(v1.gain, v2.gain)) return true;
+          if (v1.is_visited != v2.is_visited) return true;
+          if (v1.is_reachable != v2.is_reachable) return true;
+          
+          
+          return false; 
+        }
+      }
+
+bool hasEdgeChanged(const gbeam2_interfaces::msg::GraphEdge& e1, 
+                        const gbeam2_interfaces::msg::GraphEdge& e2) {
+        // Compare fundamental attributes
+        if (e1.id!=e2.id) return true;
+        if (e1.v1 != e2.v1 || e1.v2 != e2.v2) return true;
+        
+        // Compare floating-point values with epsilon
+        if (!isApproximatelyEqual(e1.length, e2.length)) return true;
+        
+        if (e1.is_walkable!=e2.is_walkable) return true;
+        
+        return false; 
+    }

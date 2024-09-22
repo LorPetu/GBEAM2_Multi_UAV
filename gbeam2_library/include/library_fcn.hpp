@@ -202,5 +202,13 @@ std::vector<int> dijkstra(gbeam2_interfaces::msg::Graph graph, int s, int t);
 // compute best path from s to t (if t<0 it is ignored)
 std::vector<int> bestPath(gbeam2_interfaces::msg::Graph graph, int s, int t);
 
+bool isApproximatelyEqual(double a, double b);
+
+bool hasVertexChanged(const gbeam2_interfaces::msg::Vertex& v1, 
+                          const gbeam2_interfaces::msg::Vertex& v2) ;
+
+bool hasEdgeChanged(const gbeam2_interfaces::msg::GraphEdge& e1, 
+                        const gbeam2_interfaces::msg::GraphEdge& e2) ;
+
 
 #endif  // LIBRARY_HPP

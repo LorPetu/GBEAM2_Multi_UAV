@@ -29,6 +29,7 @@
 #include "gbeam2_interfaces/msg/frontier_stamped.hpp"
 
 #include "gbeam2_interfaces/srv/graph_update.hpp"
+#include "library_fcn.hpp"
 
 using namespace std::chrono_literals;
 
@@ -38,12 +39,12 @@ public:
     GraphMergerNode() : Node("partial_graph_merger")
     {
 
-    service_cb_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);        
-    client_cb_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
-    timer_cb_group_ = service_cb_group_;
+    cb_group_1 = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);        
+    cb_group_2 = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    timers_cb_group = cb_group_1;
 
     rclcpp::SubscriptionOptions sub_options;
-    sub_options.callback_group = service_cb_group_;
+    sub_options.callback_group = cb_group_1;
 
     // SUBSCRIBED TOPICS
     graph_subscriber_ = this->create_subscription<gbeam2_interfaces::msg::Graph>(
@@ -57,10 +58,10 @@ public:
 
     // SERVICE 
     graph_updates_service_ = this->create_service<gbeam2_interfaces::srv::GraphUpdate>(
-        "getGraphUpdates",std::bind(&GraphMergerNode::serverCallback,this, std::placeholders::_1, std::placeholders::_2),rmw_qos_profile_services_default,service_cb_group_);
+        "getGraphUpdates",std::bind(&GraphMergerNode::serverCallback,this, std::placeholders::_1, std::placeholders::_2),rmw_qos_profile_services_default,cb_group_2);
     
     timer_ptr_ = this->create_wall_timer(2s, std::bind(&GraphMergerNode::timerCallback, this),
-                                            timer_cb_group_);
+                                            timers_cb_group);
     timer_ptr_->cancel();
 
     // Get namespace
@@ -80,12 +81,13 @@ public:
     RCLCPP_INFO(this->get_logger(),"1) Number of robots: %d",N_robot);
     RCLCPP_INFO(this->get_logger(),"1) Number of robots: %f",wifi_range);
     // Initialize vectors with the correct size
-    updateBuffer.resize(N_robot);
+    curr_updateBuffer.resize(N_robot);
+    prev_updateBuffer.resize(N_robot);
+    for (int i = 0; i < N_robot; ++i) {
+        curr_updateBuffer[i] = std::make_shared<gbeam2_interfaces::msg::Graph>();
+        prev_updateBuffer[i] = std::make_shared<gbeam2_interfaces::msg::Graph>();
+    }
     graph_updates_CLIENTS.resize(N_robot);
-    last_node_indexes.resize(N_robot);
-    last_edge_indexes.resize(N_robot);
-
-    RCLCPP_INFO(this->get_logger(),"1) Size of clients: %d",graph_updates_CLIENTS.size());
 
     // Create a client for each robot
     std::string service_name;
@@ -110,9 +112,9 @@ private:
     int N_robot;
     double wifi_range;
 
-    rclcpp::CallbackGroup::SharedPtr service_cb_group_;        
-    rclcpp::CallbackGroup::SharedPtr client_cb_group_;
-    rclcpp::CallbackGroup::SharedPtr timer_cb_group_;
+    rclcpp::CallbackGroup::SharedPtr cb_group_1;        
+    rclcpp::CallbackGroup::SharedPtr cb_group_2;
+    rclcpp::CallbackGroup::SharedPtr timers_cb_group;
 
     rclcpp::Subscription<gbeam2_interfaces::msg::Graph>::SharedPtr graph_subscriber_;
     rclcpp::Publisher<gbeam2_interfaces::msg::Graph>::SharedPtr merged_graph_pub_;
@@ -131,9 +133,10 @@ private:
     bool data_received_ = false;
     gbeam2_interfaces::srv::GraphUpdate::Response updateResponse;
 
-    std::vector<int> last_node_indexes;
-    std::vector<int> last_edge_indexes;
-    std::vector<gbeam2_interfaces::msg::Graph> updateBuffer;
+
+    std::vector<std::shared_ptr<gbeam2_interfaces::msg::Graph>> curr_updateBuffer;
+    std::vector<std::shared_ptr<gbeam2_interfaces::msg::Graph>> prev_updateBuffer;
+    
 
     geometry_msgs::msg::TransformStamped getTransform(std::string target_frame,std::string source_frame){
 
@@ -181,9 +184,9 @@ private:
         if (status) {
             // Data received within the timeout period
             //RCLCPP_INFO(this->get_logger(),"Update response success: %d (false is:%d)",updateResponse.success, false);
-            response->update_response = updateBuffer[req_robot_id];
-            last_node_indexes[req_robot_id]=updateBuffer[req_robot_id].nodes.back().id;
-            last_edge_indexes[req_robot_id]=updateBuffer[req_robot_id].edges.back().id;
+            response->update_response = *curr_updateBuffer[req_robot_id];
+
+            prev_updateBuffer[req_robot_id]=curr_updateBuffer[req_robot_id];
             response->success = updateResponse.success;
             RCLCPP_WARN(this->get_logger(), "Data received");
            
@@ -201,8 +204,11 @@ private:
         
         for (int i = 0; i < N_robot; i++)
         {
-            RCLCPP_INFO(this->get_logger(), "MERGER:: last nodes updated: %d last_edge_updated: %d", last_node_indexes[i], last_edge_indexes[i]);
-            if (i!=name_space_id) updateBuffer[graph->last_updater_id]=compareUpdates(graph,last_node_indexes[i],last_edge_indexes[i]);
+            RCLCPP_INFO(this->get_logger(), "MERGER:: last nodes updated: %d last_edge_updated: %d", prev_updateBuffer[i]->nodes.size(), prev_updateBuffer[i]->edges.size());
+            if (i!=name_space_id) {
+              auto updated_graph = std::make_shared<gbeam2_interfaces::msg::Graph>(compareUpdates(graph, prev_updateBuffer[i]));
+                curr_updateBuffer[graph->last_updater_id] = updated_graph;   
+            }
         }
         
         
@@ -223,12 +229,49 @@ private:
         timer_ptr_->cancel();
     }
 
-    gbeam2_interfaces::msg::Graph compareUpdates(gbeam2_interfaces::msg::Graph::SharedPtr graph2compare, int last_node_index, int last_edge_index){
-        // Retrieve all the new nodes after last_node_index
+    gbeam2_interfaces::msg::Graph compareUpdates(
+        const std::shared_ptr<const gbeam2_interfaces::msg::Graph>& current_graph,
+        const std::shared_ptr<const gbeam2_interfaces::msg::Graph>& previous_graph)
+    {
         gbeam2_interfaces::msg::Graph result;
-        result.nodes = std::vector<gbeam2_interfaces::msg::Vertex>(graph2compare->nodes.begin() + last_node_index, graph2compare->nodes.end());
-        result.edges = std::vector<gbeam2_interfaces::msg::GraphEdge>(graph2compare->edges.begin() + last_edge_index, graph2compare->edges.end());
-        result.adj_matrix=graph2compare->adj_matrix;
+        int last_node_index = previous_graph->nodes.size();
+        int last_edge_index = previous_graph->edges.size();
+
+        // Reserve space for potential changes (this is a rough estimate)
+        result.nodes.reserve(current_graph->nodes.size() - last_node_index);
+        result.edges.reserve(current_graph->edges.size() - last_edge_index);
+
+        // Check for modifications in existing NODES
+        for (std::size_t i = 0; i < last_node_index; ++i) {
+            if (hasVertexChanged(current_graph->nodes[i], previous_graph->nodes[i])) {
+                result.nodes.push_back(current_graph->nodes[i]);
+            }
+        }
+
+        // Add new nodes
+        result.nodes.insert(
+            result.nodes.end(),
+            std::make_move_iterator(current_graph->nodes.begin() + last_node_index),
+            std::make_move_iterator(current_graph->nodes.end())
+        );
+
+        // Check for modifications in existing EDGES
+        for (std::size_t i = 0; i < last_edge_index; ++i) {
+            if (hasEdgeChanged(current_graph->edges[i], previous_graph->edges[i])) {
+                result.edges.push_back(current_graph->edges[i]);
+            }
+        }
+
+        // Add new edges
+        result.edges.insert(
+            result.edges.end(),
+            std::make_move_iterator(current_graph->edges.begin() + last_edge_index),
+            std::make_move_iterator(current_graph->edges.end())
+        );
+
+        result.adj_matrix = current_graph->adj_matrix;
+
+
         return result;
     }
 };

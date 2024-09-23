@@ -60,9 +60,9 @@ public:
     graph_updates_service_ = this->create_service<gbeam2_interfaces::srv::GraphUpdate>(
         "getGraphUpdates",std::bind(&GraphMergerNode::serverCallback,this, std::placeholders::_1, std::placeholders::_2),rmw_qos_profile_services_default,cb_group_2);
     
-    timer_ptr_ = this->create_wall_timer(2s, std::bind(&GraphMergerNode::timerCallback, this),
+    timer_ptr_ = this->create_wall_timer(std::chrono::milliseconds(500), std::bind(&GraphMergerNode::periodicTimerCallback, this),
                                             timers_cb_group);
-    timer_ptr_->cancel();
+    
 
     // Get namespace
     name_space = this->get_namespace();
@@ -71,10 +71,14 @@ public:
     // Initialize parameters
     this->declare_parameter<int>("N_robot",0);
     this->declare_parameter<double>("communication_range",0.0);
+    this->declare_parameter<int>("periodic_call_time",0);
+    this->declare_parameter<int>("max_no_connection_time", 0);
 
     // Get parameters
     N_robot = this->get_parameter("N_robot").get_parameter_value().get<int>();
     wifi_range = this->get_parameter("communication_range").get_parameter_value().get<double>();
+    periodic_call_time =this->get_parameter("periodic_call_time").get_parameter_value().get<int>();
+    max_no_connection_time = this->get_parameter("max_no_connection_time").get_parameter_value().get<int>();
 
     RCLCPP_INFO(this->get_logger(),"############# PARAMETERS OF PARTIAL_GRAPH_MERGER: ############# ");
     RCLCPP_INFO(this->get_logger(),"############# (for %s) ############# ",name_space.c_str());
@@ -83,19 +87,29 @@ public:
     // Initialize vectors with the correct size
     curr_updateBuffer.resize(N_robot);
     prev_updateBuffer.resize(N_robot);
+    timers_CLIENTS.resize(N_robot);
+    graph_updates_CLIENTS.resize(N_robot);
+
     for (int i = 0; i < N_robot; ++i) {
         curr_updateBuffer[i] = std::make_shared<gbeam2_interfaces::msg::Graph>();
         prev_updateBuffer[i] = std::make_shared<gbeam2_interfaces::msg::Graph>();
     }
-    graph_updates_CLIENTS.resize(N_robot);
+   
 
-    // Create a client for each robot
+    // Create a client and a timer for each robot
     std::string service_name;
     for (size_t i = 0; i < N_robot; i++)
     {   
         service_name = "/robot"+std::to_string(i)+"/getGraphUpdates";
-        if (i!=name_space_id) graph_updates_CLIENTS[i]=this->create_client<gbeam2_interfaces::srv::GraphUpdate>(service_name);    
-        RCLCPP_INFO(this->get_logger(),"Initialize client: %s",service_name.c_str());     
+        if (i!=name_space_id){
+            RCLCPP_INFO(this->get_logger(),"Initialize client: %s",service_name.c_str());  
+            graph_updates_CLIENTS[i]=this->create_client<gbeam2_interfaces::srv::GraphUpdate>(service_name);
+            RCLCPP_INFO(this->get_logger(),"Initialize timer for robot%d",i);
+            timers_CLIENTS[i] = this->create_wall_timer(std::chrono::seconds(max_no_connection_time), [this,i]() -> void { timeoutCallback(i);},
+                                            timers_cb_group);
+        }    
+        
+
     }
      
 
@@ -111,6 +125,9 @@ private:
     // Parameters variables
     int N_robot;
     double wifi_range;
+    int periodic_call_time;
+    int max_no_connection_time;
+    
 
     rclcpp::CallbackGroup::SharedPtr cb_group_1;        
     rclcpp::CallbackGroup::SharedPtr cb_group_2;
@@ -123,6 +140,7 @@ private:
     std::vector<rclcpp::Client<gbeam2_interfaces::srv::GraphUpdate>::SharedPtr> graph_updates_CLIENTS;
 
     rclcpp::TimerBase::SharedPtr timer_ptr_;
+    std::vector<rclcpp::TimerBase::SharedPtr> timers_CLIENTS;
 
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
@@ -195,7 +213,7 @@ private:
             response->success = false;
             RCLCPP_WARN(this->get_logger(), "Timeout waiting for graph update");
         }
-        this->timer_ptr_->reset();
+        this->timers_CLIENTS[req_robot_id]->reset();
     }
 
     void switchCallback(const gbeam2_interfaces::msg::Graph::SharedPtr graph)
@@ -224,10 +242,29 @@ private:
         }
     }
 
-    void timerCallback(){
-        RCLCPP_INFO(this->get_logger(),"Send a request...");
-        timer_ptr_->cancel();
+    void timeoutCallback(int timer_index){
+        RCLCPP_INFO(this->get_logger(),"Expired time for robot%d ...", timer_index);        
+        timers_CLIENTS[timer_index]->cancel();
     }
+
+    void periodicTimerCallback(){
+        for(size_t i=0; i< timers_CLIENTS.size();i++){
+            if(i==name_space_id) continue;
+            if(timers_CLIENTS[i]->time_until_trigger()!=std::chrono::nanoseconds::max()){
+                if(timers_CLIENTS[i]->time_until_trigger()< std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::seconds(max_no_connection_time) - std::chrono::seconds(periodic_call_time))){
+                    //send a request
+                    RCLCPP_INFO(this->get_logger(),"Send a request to robot%ld ...",i);
+                    timers_CLIENTS[i]->cancel();
+                }
+            }else{
+                //timer is canceled
+            }
+            
+        }
+        
+    }
+
 
     gbeam2_interfaces::msg::Graph compareUpdates(
         const std::shared_ptr<const gbeam2_interfaces::msg::Graph>& current_graph,
@@ -242,7 +279,7 @@ private:
         result.edges.reserve(current_graph->edges.size() - last_edge_index);
 
         // Check for modifications in existing NODES
-        for (std::size_t i = 0; i < last_node_index; ++i) {
+        for (int i = 0; i < last_node_index; ++i) {
             if (hasVertexChanged(current_graph->nodes[i], previous_graph->nodes[i])) {
                 result.nodes.push_back(current_graph->nodes[i]);
             }
@@ -256,7 +293,7 @@ private:
         );
 
         // Check for modifications in existing EDGES
-        for (std::size_t i = 0; i < last_edge_index; ++i) {
+        for (int i = 0; i < last_edge_index; ++i) {
             if (hasEdgeChanged(current_graph->edges[i], previous_graph->edges[i])) {
                 result.edges.push_back(current_graph->edges[i]);
             }

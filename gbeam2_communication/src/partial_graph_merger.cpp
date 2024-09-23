@@ -179,12 +179,15 @@ private:
         RCLCPP_INFO(this->get_logger(), "Service received");
         //RCLCPP_INFO(this->get_logger(), "I'm receiving %ld nodes from: %d", request->update_request.nodes.size(), request->update_request.robot_id);
 
+        std::string target_frame = name_space.substr(1, name_space.length()-1) + "/odom"; //becasue lookupTransform doesn't allow "/" as first character
+        std::string source_frame = "robot"+ std::to_string(req_robot_id) + "/odom";
+
+       
+
         // Prepare and publish the fake polygon
-        gbeam2_interfaces::msg::FreePolygonStamped fake_poly;
+        auto [transformed_graph, fake_poly] = graph_transform_and_get_fakepoly(request->update_request,getTransform(target_frame,source_frame));
         fake_poly.robot_id = req_robot_id;
-        std::string target_frame = name_space.substr(1, name_space.length()-1) + "/odom";
         fake_poly.header.frame_id = target_frame;
-        fake_poly.polygon.vertices_reachable = request->update_request.nodes;
 
         //RCLCPP_INFO(this->get_logger(), "-->I'm sending %ld nodes from: %d", fake_poly.polygon.vertices_reachable.size(), fake_poly.robot_id);
         

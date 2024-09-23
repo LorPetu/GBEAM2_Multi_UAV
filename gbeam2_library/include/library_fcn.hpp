@@ -210,5 +210,9 @@ bool hasVertexChanged(const gbeam2_interfaces::msg::Vertex& v1,
 bool hasEdgeChanged(const gbeam2_interfaces::msg::GraphEdge& e1, 
                         const gbeam2_interfaces::msg::GraphEdge& e2) ;
 
+gbeam2_interfaces::msg::Graph graph_transform(const gbeam2_interfaces::msg::Graph& graph, const geometry_msgs::msg::TransformStamped& tf);
+
+std::pair<gbeam2_interfaces::msg::Graph, gbeam2_interfaces::msg::FreePolygonStamped> 
+graph_transform_and_get_fakepoly(const gbeam2_interfaces::msg::Graph& graph, const geometry_msgs::msg::TransformStamped& tf);
 
 #endif  // LIBRARY_HPP

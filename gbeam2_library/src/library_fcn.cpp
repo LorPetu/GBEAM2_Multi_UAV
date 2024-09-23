@@ -515,6 +515,86 @@ gbeam2_interfaces::msg::FreePolygon poly_transform(gbeam2_interfaces::msg::FreeP
   return f;
 }
 
+// NEW FUNCTION
+
+gbeam2_interfaces::msg::Graph graph_transform(const gbeam2_interfaces::msg::Graph& graph, const geometry_msgs::msg::TransformStamped& tf)
+{
+    gbeam2_interfaces::msg::Graph transformed_graph;
+
+    // Transform nodes
+    for (const auto& node : graph.nodes)
+    {
+        transformed_graph.nodes.push_back(vert_transform(node, tf));
+    }
+
+    // Transform edges
+    for (const auto& edge : graph.edges)
+    {
+        gbeam2_interfaces::msg::GraphEdge transformed_edge = edge;
+        
+        // Transform direction vector
+        geometry_msgs::msg::Vector3Stamped dir_in, dir_out;
+        dir_in.vector = edge.direction;
+        tf2::doTransform(dir_in, dir_out, tf);
+        transformed_edge.direction = dir_out.vector;
+
+        // Recalculate length (optional, as it might change due to scaling)
+        transformed_edge.length = std::sqrt(
+            std::pow(transformed_edge.direction.x, 2) +
+            std::pow(transformed_edge.direction.y, 2) +
+            std::pow(transformed_edge.direction.z, 2)
+        );
+
+        transformed_graph.edges.push_back(transformed_edge);
+    }
+
+    return transformed_graph;
+}
+
+std::pair<gbeam2_interfaces::msg::Graph, gbeam2_interfaces::msg::FreePolygonStamped> 
+graph_transform_and_get_fakepoly(const gbeam2_interfaces::msg::Graph& graph, const geometry_msgs::msg::TransformStamped& tf)
+{
+    gbeam2_interfaces::msg::Graph transformed_graph;
+    gbeam2_interfaces::msg::FreePolygonStamped graph_polygon;
+
+    // Transform nodes and populate the polygon
+    for (const auto& node : graph.nodes)
+    {
+        auto transformed_node = vert_transform(node, tf);
+        transformed_graph.nodes.push_back(transformed_node);
+
+        // Add the transformed node to the appropriate vector in the polygon
+        if (transformed_node.is_obstacle) {
+            graph_polygon.polygon.vertices_obstacles.push_back(transformed_node);
+        } else if (transformed_node.is_reachable) {
+            graph_polygon.polygon.vertices_reachable.push_back(transformed_node);
+        }
+    }
+
+    // Transform edges
+    for (const auto& edge : graph.edges)
+    {
+        gbeam2_interfaces::msg::GraphEdge transformed_edge = edge;
+        
+        // Transform direction vector
+        geometry_msgs::msg::Vector3Stamped dir_in, dir_out;
+        dir_in.vector = edge.direction;
+        tf2::doTransform(dir_in, dir_out, tf);
+        transformed_edge.direction = dir_out.vector;
+
+        // Recalculate length (optional, as it might change due to scaling)
+        transformed_edge.length = std::sqrt(
+            std::pow(transformed_edge.direction.x, 2) +
+            std::pow(transformed_edge.direction.y, 2) +
+            std::pow(transformed_edge.direction.z, 2)
+        );
+
+        transformed_graph.edges.push_back(transformed_edge);
+    }
+
+    return std::make_pair(transformed_graph, graph_polygon);
+}
+
 // check if vertex v is inside polytope polygon
 bool isInsideObstacles(gbeam2_interfaces::msg::FreePolygon poly, gbeam2_interfaces::msg::Vertex v)
 {

@@ -24,6 +24,8 @@
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include "std_srvs/srv/set_bool.hpp"
+#include "std_msgs/msg/float32_multi_array.hpp"
 
 #include "gbeam2_interfaces/msg/status.hpp"
 #include "gbeam2_interfaces/msg/frontier_stamped.hpp"
@@ -55,11 +57,16 @@ public:
                 "gbeam/merged_graph", 1);
     fake_poly_pub_ = this->create_publisher<gbeam2_interfaces::msg::FreePolygonStamped>(
                 "external_nodes", 1);
+    timer_pub_ =this->create_publisher<std_msgs::msg::Float32MultiArray>(
+                "timers",1);
 
-    // SERVICE 
+    // SERVICES
     graph_updates_service_ = this->create_service<gbeam2_interfaces::srv::GraphUpdate>(
         "getGraphUpdates",std::bind(&GraphMergerNode::serverCallback,this, std::placeholders::_1, std::placeholders::_2),rmw_qos_profile_services_default,cb_group_2);
-    
+    start_merger_service_ = this->create_service<std_srvs::srv::SetBool>(
+        "start_merger",std::bind(&GraphMergerNode::startMerger,this, std::placeholders::_1, std::placeholders::_2),rmw_qos_profile_services_default,cb_group_2);
+
+
     timer_ptr_ = this->create_wall_timer(std::chrono::milliseconds(500), std::bind(&GraphMergerNode::periodicTimerCallback, this),
                                             timers_cb_group);
     
@@ -88,17 +95,22 @@ public:
     curr_updateBuffer.resize(N_robot);
     prev_updateBuffer.resize(N_robot);
     timers_CLIENTS.resize(N_robot);
+    tracking_timers.data.resize(N_robot);
+
     graph_updates_CLIENTS.resize(N_robot);
+
 
     for (int i = 0; i < N_robot; ++i) {
         curr_updateBuffer[i] = std::make_shared<gbeam2_interfaces::msg::Graph>();
+        curr_updateBuffer[i]->robot_id = name_space_id;
         prev_updateBuffer[i] = std::make_shared<gbeam2_interfaces::msg::Graph>();
+        prev_updateBuffer[i]->robot_id = name_space_id;
     }
    
 
     // Create a client and a timer for each robot
     std::string service_name;
-    for (size_t i = 0; i < N_robot; i++)
+    for (int i = 0; i < N_robot; i++)
     {   
         service_name = "/robot"+std::to_string(i)+"/getGraphUpdates";
         if (i!=name_space_id){
@@ -107,7 +119,12 @@ public:
             RCLCPP_INFO(this->get_logger(),"Initialize timer for robot%d",i);
             timers_CLIENTS[i] = this->create_wall_timer(std::chrono::seconds(max_no_connection_time), [this,i]() -> void { timeoutCallback(i);},
                                             timers_cb_group);
-        }    
+            timers_CLIENTS[i]->cancel();
+        }   
+        else{
+            graph_updates_CLIENTS[i]= std::shared_ptr<rclcpp::Client<gbeam2_interfaces::srv::GraphUpdate>>();  
+            timers_CLIENTS[i] = rclcpp::TimerBase::SharedPtr();        
+        } 
         
 
     }
@@ -121,13 +138,13 @@ public:
 private:
     std::string name_space;
     int name_space_id;
+    bool start_merging = false;
 
     // Parameters variables
     int N_robot;
     double wifi_range;
     int periodic_call_time;
     int max_no_connection_time;
-    
 
     rclcpp::CallbackGroup::SharedPtr cb_group_1;        
     rclcpp::CallbackGroup::SharedPtr cb_group_2;
@@ -136,11 +153,14 @@ private:
     rclcpp::Subscription<gbeam2_interfaces::msg::Graph>::SharedPtr graph_subscriber_;
     rclcpp::Publisher<gbeam2_interfaces::msg::Graph>::SharedPtr merged_graph_pub_;
     rclcpp::Publisher<gbeam2_interfaces::msg::FreePolygonStamped>::SharedPtr fake_poly_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr timer_pub_;
     rclcpp::Service<gbeam2_interfaces::srv::GraphUpdate>::SharedPtr  graph_updates_service_;
+    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr start_merger_service_;
     std::vector<rclcpp::Client<gbeam2_interfaces::srv::GraphUpdate>::SharedPtr> graph_updates_CLIENTS;
 
     rclcpp::TimerBase::SharedPtr timer_ptr_;
     std::vector<rclcpp::TimerBase::SharedPtr> timers_CLIENTS;
+    std_msgs::msg::Float32MultiArray tracking_timers;
 
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_{nullptr};
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
@@ -171,52 +191,85 @@ private:
         }
   }
 
+    void startMerger(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, std::shared_ptr<std_srvs::srv::SetBool::Response> response){
+        start_merging=request->data;
+        if(start_merging){
+            for (int i = 0; i < N_robot; i++){   
+            if (i!=name_space_id){
+                timers_CLIENTS[i]->reset();
+                }    
+            }
+            response->success = true;
+            response->message = "Start merging for " + name_space;
+        }else{
+            response->success = false;
+            response->message = "Stop merging for" + name_space;
+
+        }
+        
+
+        
+        
+
+    }
+
     void serverCallback(const std::shared_ptr<gbeam2_interfaces::srv::GraphUpdate::Request> request,
                         std::shared_ptr<gbeam2_interfaces::srv::GraphUpdate::Response> response)
-    {
-        int req_robot_id = request->update_request.robot_id;
-        std::unique_lock<std::mutex> lock(mutex_);
-        RCLCPP_INFO(this->get_logger(), "Service received");
-        //RCLCPP_INFO(this->get_logger(), "I'm receiving %ld nodes from: %d", request->update_request.nodes.size(), request->update_request.robot_id);
+    {   
+        if(start_merging){
+            int req_robot_id = request->update_request.robot_id;
+            if(name_space_id==req_robot_id) return;
+            std::unique_lock<std::mutex> lock(mutex_);
+            RCLCPP_INFO(this->get_logger(), "SERVER [%d]: Service call received from %d", name_space_id, req_robot_id);
+            //RCLCPP_INFO(this->get_logger(), "I'm receiving %ld nodes from: %d", request->update_request.nodes.size(), request->update_request.robot_id);
 
-        std::string target_frame = name_space.substr(1, name_space.length()-1) + "/odom"; //becasue lookupTransform doesn't allow "/" as first character
-        std::string source_frame = "robot"+ std::to_string(req_robot_id) + "/odom";
+            std::string target_frame = name_space.substr(1, name_space.length()-1) + "/odom"; //becasue lookupTransform doesn't allow "/" as first character
+            std::string source_frame = "robot"+ std::to_string(req_robot_id) + "/odom";
 
-       
-
-        // Prepare and publish the fake polygon
-        auto [transformed_graph, fake_poly] = graph_transform_and_get_fakepoly(request->update_request,getTransform(target_frame,source_frame));
-        fake_poly.robot_id = req_robot_id;
-        fake_poly.header.frame_id = target_frame;
-
-        //RCLCPP_INFO(this->get_logger(), "-->I'm sending %ld nodes from: %d", fake_poly.polygon.vertices_reachable.size(), fake_poly.robot_id);
         
-        // Reset flags and prepare for new update
-        data_received_ = false;
-        updateResponse.success = false;
-        
-        // Publish the fake polygon
-        fake_poly_pub_->publish(fake_poly);
 
-        // Wait for the update to be processed with a timeout
-        auto timeout = std::chrono::seconds(5); // Adjust the timeout as needed
-        auto status = cv_.wait_for(lock, timeout, [this] { return data_received_; });
+            // Prepare and publish the fake polygon
+            auto [transformed_graph, fake_poly] = graph_transform_and_get_fakepoly(request->update_request,getTransform(target_frame,source_frame));
+            fake_poly.robot_id = req_robot_id;
+            fake_poly.header.frame_id = target_frame;
 
-        if (status) {
-            // Data received within the timeout period
-            //RCLCPP_INFO(this->get_logger(),"Update response success: %d (false is:%d)",updateResponse.success, false);
-            response->update_response = *curr_updateBuffer[req_robot_id];
+            //RCLCPP_INFO(this->get_logger(), "-->I'm sending %ld nodes from: %d", fake_poly.polygon.vertices_reachable.size(), fake_poly.robot_id);
+            
+            // Reset flags and prepare for new update
+            data_received_ = false;
+            updateResponse.success = false;
+            
+            // Publish the fake polygon
+            fake_poly_pub_->publish(fake_poly);
 
-            prev_updateBuffer[req_robot_id]=curr_updateBuffer[req_robot_id];
-            response->success = updateResponse.success;
-            RCLCPP_WARN(this->get_logger(), "Data received");
-           
-        } else {
-            // Timeout occurred
-            response->success = false;
-            RCLCPP_WARN(this->get_logger(), "Timeout waiting for graph update");
+            // Wait for the update to be processed with a timeout
+            auto timeout = std::chrono::seconds(5); // Adjust the timeout as needed
+            auto status = cv_.wait_for(lock, timeout, [this] { return data_received_; });
+
+            if (status) {
+                // Data received within the timeout period
+                //RCLCPP_INFO(this->get_logger(),"Update response success: %d (false is:%d)",updateResponse.success, false);
+                response->update_response = *curr_updateBuffer[req_robot_id];
+
+                prev_updateBuffer[req_robot_id]=curr_updateBuffer[req_robot_id];
+                response->success = updateResponse.success;
+                RCLCPP_WARN(this->get_logger(), "SERVER [%d]: Data received from %d has been processed by graph_update", name_space_id, req_robot_id);
+            
+            } else {
+                // Timeout occurred
+                response->success = false;
+                RCLCPP_WARN(this->get_logger(), "SERVER [%d]: Timeout waiting %d for graph update",name_space_id, req_robot_id);
+                return;
+            }
+            //this->timers_CLIENTS[req_robot_id]->reset(); //if(this->timers_CLIENTS[req_robot_id]->time_until_trigger()!=std::chrono::nanoseconds::max())
+
         }
-        this->timers_CLIENTS[req_robot_id]->reset();
+        else{
+            response->success = false;
+            RCLCPP_WARN(this->get_logger(), "SERVER [%d]: Merging is not available yet",name_space_id);
+            return;
+        }
+        
     }
 
     void switchCallback(const gbeam2_interfaces::msg::Graph::SharedPtr graph)
@@ -225,19 +278,19 @@ private:
         
         for (int i = 0; i < N_robot; i++)
         {
-            RCLCPP_INFO(this->get_logger(), "MERGER:: last nodes updated: %d last_edge_updated: %d", prev_updateBuffer[i]->nodes.size(), prev_updateBuffer[i]->edges.size());
             if (i!=name_space_id) {
-              auto updated_graph = std::make_shared<gbeam2_interfaces::msg::Graph>(compareUpdates(graph, prev_updateBuffer[i]));
+                auto updated_graph = std::make_shared<gbeam2_interfaces::msg::Graph>(compareUpdates(graph, prev_updateBuffer[i]));
                 curr_updateBuffer[graph->last_updater_id] = updated_graph;   
             }
         }
         
         
-        if (graph->last_updater_id != name_space_id) { 
+        if (graph->last_updater_id != name_space_id) {
+            //RCLCPP_INFO(this->get_logger(), "MERGER:: last nodes updated: %d last_edge_updated: %d", prev_updateBuffer[last_updater_id]->nodes.size(), prev_updateBuffer[last_updater_id]->edges.size());
             updateResponse.success = true;
             data_received_ = true;
             cv_.notify_one();
-            RCLCPP_INFO(this->get_logger(), "updateResponse processing...");
+            RCLCPP_INFO(this->get_logger(), "Processing update considering nodes from %d...", graph->last_updater_id);
         } else {
             // This is our own update, publish it
             //RCLCPP_INFO(this->get_logger(), "Publishing on my own topic...");
@@ -247,24 +300,58 @@ private:
 
     void timeoutCallback(int timer_index){
         RCLCPP_INFO(this->get_logger(),"Expired time for robot%d ...", timer_index);        
-        timers_CLIENTS[timer_index]->cancel();
+        timers_CLIENTS[timer_index]->reset();//cancel();
     }
 
     void periodicTimerCallback(){
-        for(size_t i=0; i< timers_CLIENTS.size();i++){
-            if(i==name_space_id) continue;
-            if(timers_CLIENTS[i]->time_until_trigger()!=std::chrono::nanoseconds::max()){
-                if(timers_CLIENTS[i]->time_until_trigger()< std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::seconds(max_no_connection_time) - std::chrono::seconds(periodic_call_time))){
+        if(start_merging){
+            for(int i=0; i< timers_CLIENTS.size();i++){
+            if(i!=name_space_id){
+                auto trigger_time = timers_CLIENTS[i]->time_until_trigger();
+                if(trigger_time!=std::chrono::nanoseconds::max()){
+                auto lb_time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds(max_no_connection_time) - std::chrono::seconds(periodic_call_time)-std::chrono::milliseconds(250));
+                auto up_time = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::seconds(max_no_connection_time) - std::chrono::seconds(periodic_call_time)+std::chrono::milliseconds(250));
+                if(trigger_time> lb_time && trigger_time<up_time){
                     //send a request
-                    RCLCPP_INFO(this->get_logger(),"Send a request to robot%ld ...",i);
-                    timers_CLIENTS[i]->cancel();
+
+                    RCLCPP_INFO(this->get_logger(),"CLIENT[%d]: Send a request to %ld ...",name_space_id,i);
+
+                    std::shared_ptr<gbeam2_interfaces::srv::GraphUpdate::Request> request_ = std::make_shared<gbeam2_interfaces::srv::GraphUpdate::Request>();
+
+                    request_->update_request = *curr_updateBuffer[i];                    
+                    prev_updateBuffer[i]=curr_updateBuffer[i];
+
+                    /*while (!graph_updates_CLIENTS[i]->wait_for_service(1s)) {
+                    if (!rclcpp::ok()) {
+                    RCLCPP_ERROR(this->get_logger(), "CLIENT[%d]: Interrupted while waiting for the service. Exiting.", name_space_id);
+                    return;
+                    }
+                    RCLCPP_INFO(this->get_logger(), "CLIENT[%d]: service not available, waiting again...", name_space_id);
+                    }*/
+                    
+                    auto result_future = graph_updates_CLIENTS[i]->async_send_request(request_);
+
+                    
+                    std::future_status status = result_future.wait_for(2s);  // timeout to guarantee a graceful finish
+                    if (status == std::future_status::ready) {
+                        RCLCPP_INFO(this->get_logger(), "CLIENT[%d]: Received response from %d",name_space_id,i);
+                        timers_CLIENTS[i]->reset();
+                    }
+
+                    
                 }
             }else{
                 //timer is canceled
             }
+            tracking_timers.data[i] = std::round(100.0f * std::chrono::duration_cast<std::chrono::duration<float>>(std::chrono::seconds(max_no_connection_time) - trigger_time).count())/ 100.0f;
+            } 
             
+            
+            }
+            
+            timer_pub_->publish(tracking_timers); 
         }
+        
         
     }
 
@@ -310,6 +397,7 @@ private:
         );
 
         result.adj_matrix = current_graph->adj_matrix;
+        result.robot_id = current_graph->robot_id;
 
 
         return result;
@@ -319,12 +407,10 @@ private:
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<GraphMergerNode>();
-
     rclcpp::executors::MultiThreadedExecutor executor;
+    auto node = std::make_shared<GraphMergerNode>();
     executor.add_node(node);
     executor.spin();
-    rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;
 }

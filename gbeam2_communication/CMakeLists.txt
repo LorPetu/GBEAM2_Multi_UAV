@@ -12,6 +12,7 @@ find_package(ament_cmake REQUIRED)
 set(DEPENDANCIES
   "rclcpp"
   "std_msgs"
+  "std_srvs"
   "geometry_msgs"
   "sensor_msgs"
   "nav_msgs"

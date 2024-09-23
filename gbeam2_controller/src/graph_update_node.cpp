@@ -186,8 +186,7 @@ private:
         if(received_ext_nodes){
             graph.last_updater_id = external_nodes.robot_id;
             is_changed = true;
-            RCLCPP_INFO(this->get_logger(), "I received some nodes not mine!");
-            received_ext_nodes = false;
+            RCLCPP_INFO(this->get_logger(), "I received some nodes from %d!", external_nodes.robot_id);
 
         } else {
             graph.last_updater_id = name_space_id;
@@ -385,6 +384,8 @@ private:
         // publish graph if some change has occurred
         if(is_changed)
             graph_pub_->publish(graph);
+            
+        if(is_changed && received_ext_nodes)   received_ext_nodes = false;
     
         //end of polyCallback
     }

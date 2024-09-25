@@ -174,7 +174,7 @@ bool isInsideConv(geometry_msgs::msg::Polygon poly, geometry_msgs::msg::Point32 
   do
   {
       int next = (i+1)%n;
-      if (orientation(poly.points[i], poly.points[next], p) <= 1) //==1 -> consider also boundary
+      if (orientation(poly.points[i], poly.points[next], p) == 1) //==1 -> consider also boundary
         inCW = false;
       else
         if (orientation(poly.points[i], poly.points[next], p) >= -1)

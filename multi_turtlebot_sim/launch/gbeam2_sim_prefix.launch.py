@@ -29,6 +29,18 @@ def generate_launch_description():
     'communication_param.yaml'
     )]
     )
+
+    coop_node = Node(
+        package='gbeam2_cooperation',
+        name='coop_manager',
+        executable='cooperation_manager',
+        namespace=robot_prefix,
+        parameters=[os.path.join(
+    get_package_share_directory('gbeam2_cooperation'),
+    'config',
+    'cooperation_param.yaml'
+    )]
+    )
     
     ddrive = Node(
         package='gbeam2_simulator',
@@ -47,9 +59,9 @@ def generate_launch_description():
 
     ld = LaunchDescription(
         [
-        ddrive, 
-         
-        graph_merger
+        ddrive,       
+        graph_merger,
+        coop_node
         ]
     )
 

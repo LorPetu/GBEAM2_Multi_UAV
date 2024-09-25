@@ -1,0 +1,5 @@
+gbeam2_interfaces/Graph update_request
+---
+gbeam2_interfaces/Graph update_response
+bool success
+

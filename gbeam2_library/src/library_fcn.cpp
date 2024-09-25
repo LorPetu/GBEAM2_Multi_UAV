@@ -5,9 +5,12 @@
 #include "geometry_msgs/msg/point32.h"
 #include "geometry_msgs/msg/vector3.h"
 #include "sensor_msgs/msg/point_cloud.h"
+#include <cmath>
+#include <limits>
 
 // infinite for raytracing
 #define INF 100000
+#define eps 10e-9
 
 
 //*********************************************************************
@@ -512,6 +515,86 @@ gbeam2_interfaces::msg::FreePolygon poly_transform(gbeam2_interfaces::msg::FreeP
   return f;
 }
 
+// NEW FUNCTION
+
+gbeam2_interfaces::msg::Graph graph_transform(const gbeam2_interfaces::msg::Graph& graph, const geometry_msgs::msg::TransformStamped& tf)
+{
+    gbeam2_interfaces::msg::Graph transformed_graph;
+
+    // Transform nodes
+    for (const auto& node : graph.nodes)
+    {
+        transformed_graph.nodes.push_back(vert_transform(node, tf));
+    }
+
+    // Transform edges
+    for (const auto& edge : graph.edges)
+    {
+        gbeam2_interfaces::msg::GraphEdge transformed_edge = edge;
+        
+        // Transform direction vector
+        geometry_msgs::msg::Vector3Stamped dir_in, dir_out;
+        dir_in.vector = edge.direction;
+        tf2::doTransform(dir_in, dir_out, tf);
+        transformed_edge.direction = dir_out.vector;
+
+        // Recalculate length (optional, as it might change due to scaling)
+        transformed_edge.length = std::sqrt(
+            std::pow(transformed_edge.direction.x, 2) +
+            std::pow(transformed_edge.direction.y, 2) +
+            std::pow(transformed_edge.direction.z, 2)
+        );
+
+        transformed_graph.edges.push_back(transformed_edge);
+    }
+
+    return transformed_graph;
+}
+
+std::pair<gbeam2_interfaces::msg::Graph, gbeam2_interfaces::msg::FreePolygonStamped> 
+graph_transform_and_get_fakepoly(const gbeam2_interfaces::msg::Graph& graph, const geometry_msgs::msg::TransformStamped& tf)
+{
+    gbeam2_interfaces::msg::Graph transformed_graph;
+    gbeam2_interfaces::msg::FreePolygonStamped graph_polygon;
+
+    // Transform nodes and populate the polygon
+    for (const auto& node : graph.nodes)
+    {
+        auto transformed_node = vert_transform(node, tf);
+        transformed_graph.nodes.push_back(transformed_node);
+
+        // Add the transformed node to the appropriate vector in the polygon
+        if (transformed_node.is_obstacle) {
+            graph_polygon.polygon.vertices_obstacles.push_back(transformed_node);
+        } else if (transformed_node.is_reachable) {
+            graph_polygon.polygon.vertices_reachable.push_back(transformed_node);
+        }
+    }
+
+    // Transform edges
+    for (const auto& edge : graph.edges)
+    {
+        gbeam2_interfaces::msg::GraphEdge transformed_edge = edge;
+        
+        // Transform direction vector
+        geometry_msgs::msg::Vector3Stamped dir_in, dir_out;
+        dir_in.vector = edge.direction;
+        tf2::doTransform(dir_in, dir_out, tf);
+        transformed_edge.direction = dir_out.vector;
+
+        // Recalculate length (optional, as it might change due to scaling)
+        transformed_edge.length = std::sqrt(
+            std::pow(transformed_edge.direction.x, 2) +
+            std::pow(transformed_edge.direction.y, 2) +
+            std::pow(transformed_edge.direction.z, 2)
+        );
+
+        transformed_graph.edges.push_back(transformed_edge);
+    }
+
+    return std::make_pair(transformed_graph, graph_polygon);
+}
+
 // check if vertex v is inside polytope polygon
 bool isInsideObstacles(gbeam2_interfaces::msg::FreePolygon poly, gbeam2_interfaces::msg::Vertex v)
 {
@@ -581,6 +664,9 @@ gbeam2_interfaces::msg::GraphEdge computeEdge(gbeam2_interfaces::msg::Vertex ver
   else
     edge.is_boundary = false;
   edge.is_walkable = false; //set non walkable as default
+  
+  vert1.neighbors.push_back(vert2.id);
+  vert2.neighbors.push_back(vert1.id);
 
   return edge;
 }
@@ -866,3 +952,53 @@ std::vector<int> bestPath(gbeam2_interfaces::msg::Graph graph, int s, int t)
 
   return path;
 }
+
+
+//*********************************************************************
+//********************* PARTIAL_MERGER FUNCTIONS **********************
+//*********************************************************************
+
+
+
+bool isApproximatelyEqual(double a, double b){
+        return std::abs(a - b) <= eps * std::max({1.0, std::abs(a), std::abs(b)});
+    }
+
+bool hasVertexChanged(const gbeam2_interfaces::msg::Vertex& v1, 
+                          const gbeam2_interfaces::msg::Vertex& v2){
+        // Check owner of the node
+        if (v1.belong_to==v2.belong_to)
+        {
+          return true;
+        } else {
+          // Compare fundamental attributes
+          if (v1.id != v2.id) return true;
+          
+          // Compare positions with epsilon
+          if (!isApproximatelyEqual(v1.x, v2.x)) return true;
+          if (!isApproximatelyEqual(v1.y, v2.y)) return true;
+          if (!isApproximatelyEqual(v1.z, v2.z)) return true;
+          
+          // Compare other attributes
+          if (!isApproximatelyEqual(v1.gain, v2.gain)) return true;
+          if (v1.is_visited != v2.is_visited) return true;
+          if (v1.is_reachable != v2.is_reachable) return true;
+          
+          
+          return false; 
+        }
+      }
+
+bool hasEdgeChanged(const gbeam2_interfaces::msg::GraphEdge& e1, 
+                        const gbeam2_interfaces::msg::GraphEdge& e2) {
+        // Compare fundamental attributes
+        if (e1.id!=e2.id) return true;
+        if (e1.v1 != e2.v1 || e1.v2 != e2.v2) return true;
+        
+        // Compare floating-point values with epsilon
+        if (!isApproximatelyEqual(e1.length, e2.length)) return true;
+        
+        if (e1.is_walkable!=e2.is_walkable) return true;
+        
+        return false; 
+    }

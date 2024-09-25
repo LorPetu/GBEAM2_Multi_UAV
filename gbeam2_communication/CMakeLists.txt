@@ -12,6 +12,7 @@ find_package(ament_cmake REQUIRED)
 set(DEPENDANCIES
   "rclcpp"
   "std_msgs"
+  "std_srvs"
   "geometry_msgs"
   "sensor_msgs"
   "nav_msgs"
@@ -32,8 +33,7 @@ endforeach(DEP IN LISTS DEPENDANCIES)
 
 # ######### EXECUTABLES ##############
 set(EXECUTABLES
-  partial_graph_transmitter
-  partial_graph_receiver
+  partial_graph_merger
   status_transmitter
   status_receiver
 )

@@ -17,36 +17,17 @@ def generate_launch_description():
     robot_prefix_arg = DeclareLaunchArgument('robot_prefix', default_value='')
     robot_prefix = LaunchConfiguration('robot_prefix')
     
-    config = os.path.join(
-    get_package_share_directory('gbeam2_controller'),
+
+    graph_merger = Node(
+        package='gbeam2_communication',
+        name='partial_graph_merger',
+        executable='partial_graph_merger',
+        namespace=robot_prefix,
+        parameters=[os.path.join(
+    get_package_share_directory('gbeam2_communication'),
     'config',
-    'global_param.yaml'
-    )
-
-    poly_gen=Node(
-        package = 'gbeam2_controller',
-        name = 'poly_gen',                  ##qua il node name è poly_gen, il nome che viene dato alla classe nel polytope_generation_node
-        executable = 'polytope_generation_node',
-        parameters = [config],
-        namespace= robot_prefix
-    )
-
-    graph_update=Node(
-        package = 'gbeam2_controller',
-        name = 'graph_update',                  
-        executable = 'graph_update_node',
-        parameters = [config],
-        namespace=robot_prefix,
-        # depends_on = ['poly_gen']
-    )
-
-    graph_expl = Node(
-        package = 'gbeam2_controller',
-        name = 'graph_expl',                 
-        executable = 'exploration_node',
-        parameters = [config],
-        namespace=robot_prefix,
-        # depends_on = ['graph_update']
+    'communication_param.yaml'
+    )]
     )
     
     ddrive = Node(
@@ -66,17 +47,9 @@ def generate_launch_description():
 
     ld = LaunchDescription(
         [
-        poly_gen,
+        ddrive, 
          
-        RegisterEventHandler(OnProcessStart(
-             target_action=poly_gen, on_start=[graph_update,ddrive])), 
-         
-        RegisterEventHandler(OnProcessStart(
-             target_action=graph_update,
-             on_start=[LogInfo(msg="Started the graph_update"),graph_expl]
-                    
-                )
-        )
+        graph_merger
         ]
     )
 

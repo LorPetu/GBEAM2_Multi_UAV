@@ -28,6 +28,7 @@ set(msg_files
   "msg/Status.msg"
   "msg/FrontierStamped.msg"
   "srv/SetMappingStatus.srv"
+  "srv/GraphUpdate.srv"
 )
 
 rosidl_generate_interfaces(${PROJECT_NAME}

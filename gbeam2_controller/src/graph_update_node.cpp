@@ -38,6 +38,7 @@
 
 #include "library_fcn.hpp"
 
+#define INF 100000
 //-------------------------------------------------------------------------------------------------------------
 
 
@@ -48,11 +49,21 @@ public:
     GraphUpdateNode() : Node("graph_update") 
     {
         name_space = this->get_namespace();
+        name_space_id = name_space.back()- '0';
+        graph.robot_id = name_space_id;
+        graph.last_updater_id = name_space_id;
+        
+        RCLCPP_INFO(this->get_logger(), "namespace: %s ",name_space.c_str());
+        RCLCPP_INFO(this->get_logger(), "namespace_id: %d",name_space_id);
         poly_sub_ = this->create_subscription<gbeam2_interfaces::msg::FreePolygonStamped>(
             "gbeam/free_polytope", 1, std::bind(&GraphUpdateNode::polyCallback, this, std::placeholders::_1));
 
         graph_pub_ =this->create_publisher<gbeam2_interfaces::msg::Graph>(
           "gbeam/reachability_graph",1);
+
+        external_poly_sub_ = this->create_subscription<gbeam2_interfaces::msg::FreePolygonStamped>(
+            "external_nodes", 1, std::bind(&GraphUpdateNode::extNodesCallback, this, std::placeholders::_1));
+
         
         // SERVICE
         status_server_ = this->create_service<gbeam2_interfaces::srv::SetMappingStatus>(
@@ -122,6 +133,8 @@ private:
     double obstacle_margin;
     double safe_dist;
 
+    bool received_ext_nodes;
+
     
     double limit_xi, limit_xs, limit_yi, limit_ys;
 
@@ -129,12 +142,22 @@ private:
     
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::string name_space;
+    int name_space_id;
+
+    gbeam2_interfaces::msg::FreePolygonStamped external_nodes;
 
     gbeam2_interfaces::msg::Graph graph;
 
     rclcpp::Publisher<gbeam2_interfaces::msg::Graph>::SharedPtr graph_pub_;
     rclcpp::Subscription<gbeam2_interfaces::msg::FreePolygonStamped>::SharedPtr poly_sub_;
+    rclcpp::Subscription<gbeam2_interfaces::msg::FreePolygonStamped>::SharedPtr external_poly_sub_;
     rclcpp::Service<gbeam2_interfaces::srv::SetMappingStatus>::SharedPtr status_server_;
+
+    void extNodesCallback(const std::shared_ptr<gbeam2_interfaces::msg::FreePolygonStamped> received_nodes){
+        // Each time i receive external nodes I store them 
+        external_nodes = *received_nodes;
+        received_ext_nodes = true;
+    }
 
     void polyCallback(const std::shared_ptr<gbeam2_interfaces::msg::FreePolygonStamped> poly_ptr)
     {
@@ -158,6 +181,16 @@ private:
             std::this_thread::sleep_for(std::chrono::seconds(1));
             return;
         }
+        
+        //std::is_empty<gbeam2_interfaces::msg::FreePolygonStamped>
+        if(received_ext_nodes){
+            graph.last_updater_id = external_nodes.robot_id;
+            is_changed = true;
+            RCLCPP_INFO(this->get_logger(), "I received some nodes from %d!", external_nodes.robot_id);
+
+        } else {
+            graph.last_updater_id = name_space_id;
+        }
 
 
         // ####################################################
@@ -171,11 +204,22 @@ private:
             vert = vert_transform(vert, l2g_tf); //change coordinates to global position
 
             float vert_dist = vert_graph_distance_noobstacle(graph, vert);
-
             // vert = applyBoundary(vert, limit_xi, limit_xs, limit_yi, limit_ys);
-            if (vert_dist > node_dist_open)
+
+            /// ####### NEW PART FOR COMMUNICATION ############
+            float vert_ext_dist; 
+            if(received_ext_nodes && external_nodes.polygon.vertices_reachable.size()!=0){
+                gbeam2_interfaces::msg::Graph fake_graph;
+                fake_graph.nodes = external_nodes.polygon.vertices_reachable;
+                vert_ext_dist = vert_graph_distance_noobstacle(fake_graph, vert);
+            }
+            else{
+                vert_ext_dist = INF;
+            }
+            // ################################################
+
+            if (vert_dist > node_dist_open && vert_ext_dist> node_dist_open) // modified also this condition
             {
-                //RCLCPP_INFO(this->get_logger()," -------> entra nel primo if (vert_dist > node_dist_open)");
             vert.id = graph.nodes.size();
             vert.is_reachable = true;
             vert.gain ++;
@@ -187,10 +231,14 @@ private:
             addNode(graph,vert); //add vertex to the graph
             is_changed = true;
             }
+            else if (vert_ext_dist< node_dist_open)
+            {
+                RCLCPP_INFO(this->get_logger(),"REACHABLE Vertex %d wasn't added due to conflict with external nodes",i);
+            }
+            
         }
         for (int i=0; i<poly_ptr->polygon.vertices_obstacles.size(); i++)
         {
-            //RCLCPP_INFO(this->get_logger(),"entrato nel secondo for -------> ");
             gbeam2_interfaces::msg::Vertex vert = poly_ptr->polygon.vertices_obstacles[i];  //get vertex from polytope
             vert = vert_transform(vert, l2g_tf); //change coordinates to global position
 
@@ -198,20 +246,34 @@ private:
 
             float vert_dist = vert_graph_distance_obstacle(graph, vert);
 
-            if ((vert_dist > node_dist_min) && vert.is_obstacle)
+            /// ####### NEW PART FOR COMMUNICATION ############
+            float vert_ext_dist; 
+            if(received_ext_nodes && external_nodes.polygon.vertices_obstacles.size()!=0){
+                gbeam2_interfaces::msg::Graph fake_graph;
+                fake_graph.nodes = external_nodes.polygon.vertices_obstacles;
+                vert_ext_dist = vert_graph_distance_noobstacle(fake_graph, vert);
+            }
+            else{
+                vert_ext_dist = INF;
+            }
+            // #################################################
+            if ((vert_dist > node_dist_min && vert_ext_dist> node_dist_min) && vert.is_obstacle)
             {
-                //RCLCPP_INFO(this->get_logger()," -------> entra nel secondo if ((vert_dist > node_dist_min) && vert.is_obstacle))");
+                
             vert.id = graph.nodes.size();
             vert.gain ++;
             if (!isInBoundary(vert, limit_xi, limit_xs, limit_yi, limit_ys))
             {
-                //RCLCPP_INFO(this->get_logger()," -------> entra nel terzo if is boundary");
                 vert.is_reachable = false;
                 vert.gain = 0;
             }
 
             addNode(graph,vert);         //add vertex to the graph
             is_changed = true;
+            }
+            else if (vert_ext_dist< node_dist_open)
+            {
+                RCLCPP_INFO(this->get_logger(),"OBSTACLE Vertex %d wasn't added due to conflict with external nodes",i);
             }
         }
 
@@ -220,7 +282,6 @@ private:
         // ####################################################
         // ####### ---------- ADD GRAPH EDGES --------- #######
         // ####################################################
-        //RCLCPP_INFO(this->get_logger(),"####### ---------- ADD GRAPH EDGES --------- #######");
         
         //compute polygon in global coordinates
         gbeam2_interfaces::msg::FreePolygon polyGlobal = poly_transform(poly_ptr->polygon, l2g_tf);
@@ -281,6 +342,23 @@ private:
             if(graph.nodes[n].is_obstacle && !graph.nodes[n].is_completely_connected)
             {
                 bool connected_left = false, connected_right = false;
+                for(int e : new_adj_matrix[n]){
+                    if(e!= -1 && graph.edges[e].is_boundary)
+                {
+                    // compute angular coefficient of the line containing normal: y=mx
+                    float m = graph.nodes[n].obstacle_normal.y/graph.nodes[n].obstacle_normal.x;
+                    // compute value of the inequality mx-y>0, evaluated for edge direction
+                    float value = m * graph.edges[e].direction.x - graph.edges[e].direction.y;
+                    if(graph.edges[e].v2 == n)
+                    value = -value;
+                    if(value>0)
+                    connected_right = true;
+                    else
+                    connected_left = true;
+                }
+
+                }
+                /*
                 for(int e=0; e<graph.edges.size(); e++)
                 {
                 if(graph.edges[e].is_boundary && ((graph.edges[e].v1 == n) || (graph.edges[e].v2 == n)))
@@ -296,7 +374,7 @@ private:
                     else
                     connected_left = true;
                 }
-                }
+                }*/
 
 
                 if (connected_left && connected_right)
@@ -323,6 +401,8 @@ private:
         // publish graph if some change has occurred
         if(is_changed)
             graph_pub_->publish(graph);
+            
+        if(is_changed && received_ext_nodes)   received_ext_nodes = false;
     
         //end of polyCallback
     }

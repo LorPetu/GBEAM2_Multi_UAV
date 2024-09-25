@@ -328,13 +328,22 @@ private:
                     }
                     RCLCPP_INFO(this->get_logger(), "CLIENT[%d]: service not available, waiting again...", name_space_id);
                     }*/
+
+                    using ServiceResponseFuture =
+                    rclcpp::Client<gbeam2_interfaces::srv::GraphUpdate>::SharedFutureWithRequest;
+
+                    auto response_received_callback =
+                    [node = this](ServiceResponseFuture future) -> void {
+                        auto request_response = future.get();
+                        node->merged_graph_pub_->publish(request_response.second->update_response); 
+                    };
                     
-                    auto result_future = graph_updates_CLIENTS[i]->async_send_request(request_);
+                    auto result_future = graph_updates_CLIENTS[i]->async_send_request(request_, std::move(response_received_callback));
 
                     
                     std::future_status status = result_future.wait_for(2s);  // timeout to guarantee a graceful finish
                     if (status == std::future_status::ready) {
-                        RCLCPP_INFO(this->get_logger(), "CLIENT[%d]: Received response from %d",name_space_id,i);
+                        RCLCPP_INFO(this->get_logger(), "CLIENT[%d]: Received response from %d",name_space_id,i);        
                         timers_CLIENTS[i]->reset();
                     }
 

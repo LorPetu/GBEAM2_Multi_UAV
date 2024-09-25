@@ -177,7 +177,7 @@ bool isInsideConv(geometry_msgs::msg::Polygon poly, geometry_msgs::msg::Point32 
   do
   {
       int next = (i+1)%n;
-      if (orientation(poly.points[i], poly.points[next], p) <= 1) //==1 -> consider also boundary
+      if (orientation(poly.points[i], poly.points[next], p) == 1) //==1 -> consider also boundary
         inCW = false;
       else
         if (orientation(poly.points[i], poly.points[next], p) >= -1)
@@ -664,6 +664,9 @@ gbeam2_interfaces::msg::GraphEdge computeEdge(gbeam2_interfaces::msg::Vertex ver
   else
     edge.is_boundary = false;
   edge.is_walkable = false; //set non walkable as default
+  
+  vert1.neighbors.push_back(vert2.id);
+  vert2.neighbors.push_back(vert1.id);
 
   return edge;
 }

@@ -31,8 +31,9 @@ public:
     assigned_graph_pub_ = this->create_publisher<gbeam2_interfaces::msg::Graph>(
       "gbeam/assigned_graph",1);
 
-    //Get namespace
+   // Get namespace
     name_space = this->get_namespace();
+    name_space_id = name_space.back()- '0';
 
     //Initialize parameters
 
@@ -42,6 +43,7 @@ public:
 
 private:
   std::string name_space;
+  int name_space_id;
 
 
   //adjacency matrix is related to that graph

@@ -342,6 +342,23 @@ private:
             if(graph.nodes[n].is_obstacle && !graph.nodes[n].is_completely_connected)
             {
                 bool connected_left = false, connected_right = false;
+                for(int e : new_adj_matrix[n]){
+                    if(e!= -1 && graph.edges[e].is_boundary)
+                {
+                    // compute angular coefficient of the line containing normal: y=mx
+                    float m = graph.nodes[n].obstacle_normal.y/graph.nodes[n].obstacle_normal.x;
+                    // compute value of the inequality mx-y>0, evaluated for edge direction
+                    float value = m * graph.edges[e].direction.x - graph.edges[e].direction.y;
+                    if(graph.edges[e].v2 == n)
+                    value = -value;
+                    if(value>0)
+                    connected_right = true;
+                    else
+                    connected_left = true;
+                }
+
+                }
+                /*
                 for(int e=0; e<graph.edges.size(); e++)
                 {
                 if(graph.edges[e].is_boundary && ((graph.edges[e].v1 == n) || (graph.edges[e].v2 == n)))
@@ -357,7 +374,7 @@ private:
                     else
                     connected_left = true;
                 }
-                }
+                }*/
 
 
                 if (connected_left && connected_right)

@@ -48,8 +48,10 @@ public:
     RCLCPP_INFO(this->get_logger(),"############# (for %s) ############# ",name_space.c_str());
     RCLCPP_INFO(this->get_logger(),"1) Number of robots: %d",N_robot);
     RCLCPP_INFO(this->get_logger(),"1) Number of robots: %f",wifi_range);
+
     // Initialize vectors with the correct size
     stored_Graph.resize(N_robot);
+    last_status.resize(N_robot);
     
 
     
@@ -67,6 +69,8 @@ private:
   std::vector<std::shared_ptr<gbeam2_interfaces::msg::Graph>> stored_Graph;
   int last_updated_node;
   int last_updated_edge;
+
+  std::vector<gbeam2_interfaces::msg::Status> last_status;
 
 
   //adjacency matrix is related to that graph

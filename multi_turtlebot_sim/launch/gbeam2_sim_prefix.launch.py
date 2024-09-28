@@ -29,6 +29,17 @@ def generate_launch_description():
     'communication_param.yaml'
     )]
     )
+    status_node = Node(
+        package='gbeam2_communication',
+        name='statusTX_node',
+        executable='status_transmitter',
+        namespace=robot_prefix,
+        parameters=[os.path.join(
+    get_package_share_directory('gbeam2_communication'),
+    'config',
+    'communication_param.yaml'
+    )]
+    )
 
     coop_node = Node(
         package='gbeam2_cooperation',
@@ -61,6 +72,7 @@ def generate_launch_description():
         [
         ddrive,       
         graph_merger,
+        status_node,
         coop_node
         ]
     )
@@ -92,6 +104,14 @@ def generate_launch_description():
         name = 'graph_draw',                  
         executable = 'graph_drawer',
         namespace=robot_prefix,
+        parameters = [config_ground]
+    ))
+
+    ld.add_action(
+        Node(
+        package = 'gbeam2_ground',
+        name = 'comm_drawer',                  
+        executable = 'communication_drawer',
         parameters = [config_ground]
     ))
 

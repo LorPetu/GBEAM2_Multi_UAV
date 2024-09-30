@@ -201,6 +201,7 @@ private:
         {
             //RCLCPP_INFO(this->get_logger(),"entrato nel primo for -------> ");
             gbeam2_interfaces::msg::Vertex vert = poly_ptr->polygon.vertices_reachable[i];  //get vertex from polytope
+            vert.belong_to = name_space_id;
             vert = vert_transform(vert, l2g_tf); //change coordinates to global position
 
             float vert_dist = vert_graph_distance_noobstacle(graph, vert);
@@ -240,6 +241,7 @@ private:
         for (int i=0; i<poly_ptr->polygon.vertices_obstacles.size(); i++)
         {
             gbeam2_interfaces::msg::Vertex vert = poly_ptr->polygon.vertices_obstacles[i];  //get vertex from polytope
+            vert.belong_to = name_space_id;
             vert = vert_transform(vert, l2g_tf); //change coordinates to global position
 
             vert = moveAway(vert, obstacle_margin);

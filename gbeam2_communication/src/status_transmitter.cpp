@@ -152,7 +152,7 @@ private:
         point_i.x = curr_status[i].current_position.pose.pose.position.x;
         point_i.y = curr_status[i].current_position.pose.pose.position.y;
         
-        if(distSq(pos_point,point_i) < wifi_range)
+        if(sqrt(distSq(pos_point,point_i)) < wifi_range)
         {
           curr_status[name_space_id].connection_status[i]=1; // 1 if connection is established, 0 otherwhise
 

@@ -21,6 +21,7 @@
 #include "gbeam2_interfaces/msg/poly_area.hpp"
 #include "gbeam2_interfaces/msg/graph.hpp"
 #include "gbeam2_interfaces/msg/status.hpp"
+#include "gbeam2_interfaces/msg/frontier_stamped.hpp"
 
 #include "tf2_ros/transform_listener.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.h"
@@ -38,10 +39,16 @@ public:
     {
         joint_line_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/status_visualization/joint_line", 1);
         joint_vectors_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/status_visualization/joint_vectors", 1);
+        graph_nodes_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("/status_visualization/frontiers", 1);
 
         status_sub_ = this->create_subscription<gbeam2_interfaces::msg::Status>(
             "/status", 1,
             std::bind(&CommDrawer::statusCallback, this, std::placeholders::_1));
+
+        frontier_sub_ = this->create_subscription<gbeam2_interfaces::msg::FrontierStamped>(
+            "/robot0/frontier", 1,
+            std::bind(&CommDrawer::frontierCallback, this, std::placeholders::_1));
+
 
         
 
@@ -78,6 +85,8 @@ private:
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr joint_vectors_pub_; 
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr joint_line_pub_; 
     rclcpp::Subscription<gbeam2_interfaces::msg::Status>::SharedPtr status_sub_;
+    rclcpp::Subscription<gbeam2_interfaces::msg::FrontierStamped>::SharedPtr frontier_sub_;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr graph_nodes_pub;
 
     float scaling;
     int N_robot;
@@ -93,7 +102,7 @@ private:
         pointcloud2_msg.is_bigendian = false;
         
         // Define fields
-        pointcloud2_msg.fields.resize(7); // x, y, z, exp_gain, is_obstacle, is_completely_connected, node_id
+        pointcloud2_msg.fields.resize(4); // x, y, z, exp_gain, is_obstacle, is_completely_connected, node_id
         pointcloud2_msg.fields[0].name = "x";
         pointcloud2_msg.fields[0].offset = 0;
         pointcloud2_msg.fields[0].datatype = sensor_msgs::msg::PointField::FLOAT32;
@@ -109,27 +118,12 @@ private:
         pointcloud2_msg.fields[2].datatype = sensor_msgs::msg::PointField::FLOAT32;
         pointcloud2_msg.fields[2].count = 1;
         
-        pointcloud2_msg.fields[3].name = "exp_gain";
+        pointcloud2_msg.fields[3].name = "left_or_right";
         pointcloud2_msg.fields[3].offset = 12;
-        pointcloud2_msg.fields[3].datatype = sensor_msgs::msg::PointField::FLOAT32;
+        pointcloud2_msg.fields[3].datatype = sensor_msgs::msg::PointField::UINT8;
         pointcloud2_msg.fields[3].count = 1;
 
-        pointcloud2_msg.fields[4].name = "is_obstacle";
-        pointcloud2_msg.fields[4].offset = 16;
-        pointcloud2_msg.fields[4].datatype = sensor_msgs::msg::PointField::UINT8;
-        pointcloud2_msg.fields[4].count = 1;
-
-        pointcloud2_msg.fields[5].name = "is_completely_connected";
-        pointcloud2_msg.fields[5].offset = 17;
-        pointcloud2_msg.fields[5].datatype = sensor_msgs::msg::PointField::UINT8;
-        pointcloud2_msg.fields[5].count = 1;
-
-        pointcloud2_msg.fields[6].name = "node_id";
-        pointcloud2_msg.fields[6].offset = 18;
-        pointcloud2_msg.fields[6].datatype = sensor_msgs::msg::PointField::UINT32;
-        pointcloud2_msg.fields[6].count = 1;
-
-        pointcloud2_msg.point_step = 22;  // 3 fields x 4 bytes/field + 2 fields x 1 byte/field + 1 field x 4 bytes/field
+        pointcloud2_msg.point_step = 13;  //Corrected point_step value: 3 fields x 4 bytes (for x, y, z) + 1 field x 1 byte (for left_or_right)
         pointcloud2_msg.row_step = pointcloud2_msg.point_step * pointcloud2_msg.width;
         
         // Reserve memory for the point data
@@ -138,26 +132,57 @@ private:
         sensor_msgs::PointCloud2Iterator<float> iter_x(pointcloud2_msg, "x");
         sensor_msgs::PointCloud2Iterator<float> iter_y(pointcloud2_msg, "y");
         sensor_msgs::PointCloud2Iterator<float> iter_z(pointcloud2_msg, "z");
-        sensor_msgs::PointCloud2Iterator<float> iter_exp_gain(pointcloud2_msg, "exp_gain");
-        sensor_msgs::PointCloud2Iterator<uint8_t> iter_is_obstacle(pointcloud2_msg, "is_obstacle");
-        sensor_msgs::PointCloud2Iterator<uint8_t> iter_is_connected(pointcloud2_msg, "is_completely_connected");
-        sensor_msgs::PointCloud2Iterator<uint32_t> iter_node_id(pointcloud2_msg, "node_id");
+        sensor_msgs::PointCloud2Iterator<uint8_t> iter_is_LR(pointcloud2_msg, "left_or_right");
+
         
-        for (size_t i = 0; i < msg.points.size(); ++i, ++iter_x, ++iter_y, ++iter_z, ++iter_exp_gain, ++iter_is_obstacle, ++iter_is_connected, ++iter_node_id)
+        for (size_t i = 0; i < msg.points.size(); ++i, ++iter_x, ++iter_y, ++iter_z, ++iter_is_LR)
         {
             *iter_x = msg.points[i].x;
             *iter_y = msg.points[i].y;
             *iter_z = msg.points[i].z;
-            *iter_exp_gain = msg.channels[0].values[i];
-            *iter_is_obstacle = static_cast<uint8_t>(msg.channels[1].values[i]);
-            *iter_is_connected = static_cast<uint8_t>(msg.channels[2].values[i]);
-            *iter_node_id = static_cast<uint32_t>(msg.channels[3].values[i]);
+            *iter_is_LR = static_cast<uint8_t>(msg.channels[0].values[i]);          
         }
         
         // return PointCloud2 message
         return pointcloud2_msg;
     };
 
+    void frontierCallback(const gbeam2_interfaces::msg::FrontierStamped::SharedPtr received_frontier){
+
+        std::string target_frame =  "robot0/odom"; //becasue lookupTransform doesn't allow "/" as first character
+
+        //initialize node_points for /graph_nodes
+        sensor_msgs::msg::PointCloud node_points;
+        sensor_msgs::msg::ChannelFloat32 rightORleft;
+
+        //add nodes and nodes normals
+        for (int n = 0; n < received_frontier->frontier.vertices_obstacles.size(); n++)
+        {
+            geometry_msgs::msg::Point32 point;
+            point.x = received_frontier->frontier.vertices_obstacles[n].x;
+            point.y = received_frontier->frontier.vertices_obstacles[n].y;
+            point.z = received_frontier->frontier.vertices_obstacles[n].z;
+            node_points.points.push_back(point);
+            rightORleft.values.push_back(1); //1 right
+
+        }
+        for (int n = 0; n < received_frontier->frontier.vertices_reachable.size(); n++)
+        {
+            geometry_msgs::msg::Point32 point;
+            point.x = received_frontier->frontier.vertices_reachable[n].x;
+            point.y = received_frontier->frontier.vertices_reachable[n].y;
+            point.z = received_frontier->frontier.vertices_reachable[n].z;
+            node_points.points.push_back(point);
+            rightORleft.values.push_back(0); //0 left
+
+        }
+        node_points.channels.push_back(rightORleft);
+        node_points.header.frame_id = target_frame;
+
+        sensor_msgs::msg::PointCloud2 node_points_2 = pointCloudTOpointCloud2(node_points);
+
+        graph_nodes_pub->publish(node_points_2);
+    }
 
   void statusCallback(const gbeam2_interfaces::msg::Status::SharedPtr received_status){
     curr_status[received_status->robot_id] = *received_status;
@@ -186,50 +211,65 @@ private:
 
     // Colors for the markers
     std_msgs::msg::ColorRGBA lines_color;
-    normals_color.r = 1.0;
-    normals_color.g = 0.8;
-    normals_color.b = 0.5;
-    normals_color.a = 1.0;
+    lines_color.r = 1.0;
+    lines_color.g = 0.0;
+    lines_color.b = 0.0;
+    lines_color.a = 1.0;
+    // Colors for the markers
+    std_msgs::msg::ColorRGBA connected_lines_color;
+    connected_lines_color.r = 0.0;
+    connected_lines_color.g = 1.0;
+    connected_lines_color.b = 0.0;
+    connected_lines_color.a = 1.0;
  
     for (int i = 0; i < N_robot; i++) {
         for (int j = i + 1; j < N_robot; j++) { 
             // Push the points corresponding to robot i and robot j
             joint_line_markers.points.push_back(curr_status[i].current_position.pose.pose.position);
             joint_line_markers.points.push_back(curr_status[j].current_position.pose.pose.position);
-            joint_line_markers.colors.push_back(lines_color);
-            joint_line_markers.colors.push_back(lines_color);
+            if(sqrt(distSq(curr_status[i].current_position.pose.pose.position,curr_status[j].current_position.pose.pose.position)) > wifi_range) {
+                joint_line_markers.colors.push_back(lines_color);
+                joint_line_markers.colors.push_back(lines_color);
+            } else {
+                joint_line_markers.colors.push_back(connected_lines_color);
+                joint_line_markers.colors.push_back(connected_lines_color);
 
-            // Calculate the median point between robot i and robot j
-            geometry_msgs::msg::Point median;
-            median.x = (curr_status[i].current_position.pose.pose.position.x + curr_status[j].current_position.pose.pose.position.x) / 2.0;
-            median.y = (curr_status[i].current_position.pose.pose.position.y + curr_status[j].current_position.pose.pose.position.y) / 2.0;
-            median.z = (curr_status[i].current_position.pose.pose.position.z + curr_status[j].current_position.pose.pose.position.z) / 2.0;
+                // Calculate the median point between robot i and robot j
+                geometry_msgs::msg::Point median;
+                median.x = (curr_status[i].current_position.pose.pose.position.x + curr_status[j].current_position.pose.pose.position.x) / 2.0;
+                median.y = (curr_status[i].current_position.pose.pose.position.y + curr_status[j].current_position.pose.pose.position.y) / 2.0;
+                median.z = (curr_status[i].current_position.pose.pose.position.z + curr_status[j].current_position.pose.pose.position.z) / 2.0;
 
-            // Add vectors for each pair
-            for (int k = 0; k < curr_status[i].joint_vector.size(); k++) {
-                if (i != k ) {  // Ensure not comparing the robot to itself
-                    geometry_msgs::msg::Point w, z;
+                // Add vectors for each pair
+                for (int k = 0; k < curr_status[i].joint_vector.size(); k++) {
+                    if (i != k ) {  // Ensure not comparing the robot to itself
+                        geometry_msgs::msg::Point w, z;
 
-                    // Initialize w and z based on the median
-                    w = median;
-                    z = median;
+                        // Initialize w and z based on the median
+                        w = median;
+                        z = median;
 
-                    // Adjust w and z based on the joint vector
-                    z.x += 0.1 * curr_status[i].normal_joint_vector[k].x;
-                    z.y += 0.1 * curr_status[i].normal_joint_vector[k].y;
-                    z.z += 0.1 * curr_status[i].normal_joint_vector[k].z;
+                        // Adjust w and z based on the joint vector
+                        z.x += 0.1 * curr_status[i].normal_joint_vector[k].x;
+                        z.y += 0.1 * curr_status[i].normal_joint_vector[k].y;
+                        z.z += 0.1 * curr_status[i].normal_joint_vector[k].z;
 
-                    w.x -= 0.1 * curr_status[i].normal_joint_vector[k].x;
-                    w.y -= 0.1 * curr_status[i].normal_joint_vector[k].y;
-                    w.z -= 0.1 * curr_status[i].normal_joint_vector[k].z;
+                        w.x -= 0.1 * curr_status[i].normal_joint_vector[k].x;
+                        w.y -= 0.1 * curr_status[i].normal_joint_vector[k].y;
+                        w.z -= 0.1 * curr_status[i].normal_joint_vector[k].z;
 
-                    // Add the points and colors for the visualization
-                    joint_vector_markers.points.push_back(w);
-                    joint_vector_markers.points.push_back(z);
-                    joint_vector_markers.colors.push_back(normals_color);
-                    joint_vector_markers.colors.push_back(normals_color);
+                        // Add the points and colors for the visualization
+                        joint_vector_markers.points.push_back(w);
+                        joint_vector_markers.points.push_back(z);
+                        joint_vector_markers.colors.push_back(normals_color);
+                        joint_vector_markers.colors.push_back(normals_color);
+                    }
                 }
+
+
+
             }
+            
         }
     }
 

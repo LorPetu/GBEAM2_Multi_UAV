@@ -31,6 +31,69 @@
 
 #define INF 100000
 
+class Ellipse {
+  private:
+      gbeam2_interfaces::msg::Vertex focus1;
+      gbeam2_interfaces::msg::Vertex focus2;
+      double a;  // Semi-major axis
+      double b; // Semi-minor axis
+
+      gbeam2_interfaces::msg::Vertex pointToVertex(const geometry_msgs::msg::Point& point) const {
+        gbeam2_interfaces::msg::Vertex vert;
+        vert.x = point.x;
+        vert.y = point.y;
+        vert.z = point.z;
+        // Initialize other Vertex fields with default values if needed
+        return vert;
+      }
+      void calculateSemiMajorAxis() {
+          double c = dist(focus1, focus2) / 2.0;  // Half the distance between foci 
+          a = std::sqrt(b*b + c*c);
+      }
+
+  public:
+      // Constructor
+      Ellipse(const gbeam2_interfaces::msg::Vertex& f1, const gbeam2_interfaces::msg::Vertex& f2, double semi_minor_axis)
+          : focus1(f1), focus2(f2), b(semi_minor_axis) {
+            calculateSemiMajorAxis();
+          }
+
+           // Constructor with Point objects
+      Ellipse(const geometry_msgs::msg::Point& f1, const geometry_msgs::msg::Point& f2, double semi_minor_axis)
+        : focus1(pointToVertex(f1)), focus2(pointToVertex(f2)), b(semi_minor_axis) {
+          calculateSemiMajorAxis();
+        }
+
+      // Check if a Vertex is inside the ellipse
+      bool isInside(const gbeam2_interfaces::msg::Vertex& vert) const {
+          double d1 = dist(vert, focus1);
+          double d2 = dist(vert, focus2);
+          return (d1 + d2) <= 2 * a;
+      }
+
+      // Check if a point is inside the ellipse
+      bool isInside(const geometry_msgs::msg::Point point) const {
+          gbeam2_interfaces::msg::Vertex vert;
+          vert.x = point.x;
+          vert.y = point.y;
+          //vert.z = z;
+          return isInside(vert);
+      }
+
+      // Getters
+      const gbeam2_interfaces::msg::Vertex& getFocus1() const { return focus1; }
+      const gbeam2_interfaces::msg::Vertex& getFocus2() const { return focus2; }
+      double getSemiMajorAxis() const { return a; }
+      double getSemiMinorAxis() const { return b; }
+
+      // Setters
+      void setFocus1(const gbeam2_interfaces::msg::Vertex& f1) { focus1 = f1; }
+      void setFocus2(const gbeam2_interfaces::msg::Vertex& f2) { focus2 = f2; }
+      void setSemiMinorAxis(double semi_minor_axis) { b = semi_minor_axis; }
+  };
+
+
+
 class CooperationNode : public rclcpp::Node
 {
 public:
@@ -71,15 +134,21 @@ public:
      // Initialize parameters
     this->declare_parameter<int>("N_robot",0);
     this->declare_parameter<double>("communication_range",0.0);
+    this->declare_parameter<double>("elipse_scaling_obs",0.0);
+    this->declare_parameter<double>("elipse_scaling_robot",0.0);
 
     // Get parameters
     N_robot = this->get_parameter("N_robot").get_parameter_value().get<int>();
     wifi_range = this->get_parameter("communication_range").get_parameter_value().get<double>();
+    elipse_scaling_obs = this->get_parameter("elipse_scaling_obs").get_parameter_value().get<double>();
+    elipse_scaling_robot = this->get_parameter("elipse_scaling_robot").get_parameter_value().get<double>();
 
     RCLCPP_INFO(this->get_logger(),"############# PARAMETERS OF COOPERATION: ############# ");
     RCLCPP_INFO(this->get_logger(),"############# (for %s) ############# ",name_space.c_str());
     RCLCPP_INFO(this->get_logger(),"1) Number of robots: %d",N_robot);
-    RCLCPP_INFO(this->get_logger(),"1) Number of robots: %f",wifi_range);
+    RCLCPP_INFO(this->get_logger(),"2) Communication range: %f",wifi_range);
+    RCLCPP_INFO(this->get_logger(),"3) Elipse scaling for frontier obstacle node: %f",elipse_scaling_obs);
+    RCLCPP_INFO(this->get_logger(),"4) Elipse scaling between robots: %f",elipse_scaling_robot);
 
     // Initialize vectors with the correct size
     stored_Graph.resize(N_robot);
@@ -106,6 +175,8 @@ private:
   // Parameters variables
   int N_robot;
   double wifi_range;
+  double elipse_scaling_obs;
+  double elipse_scaling_robot;
 
   std::vector<std::shared_ptr<gbeam2_interfaces::msg::Graph>> stored_Graph;
   int last_updated_node;
@@ -132,12 +203,42 @@ private:
 
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr  start_frontiers_service_;
 
+
    void startFrontier(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, std::shared_ptr<std_srvs::srv::SetBool::Response> response){
         start_frontier=request->data;     
     }
-  double sideOfLine(geometry_msgs::msg::Point lineStart, geometry_msgs::msg::Point lineEnd, gbeam2_interfaces::msg::Vertex point) {
-    return (lineEnd.x - lineStart.x) * (point.y - lineStart.y) - 
+  std::pair<double, bool> sideOfLine(geometry_msgs::msg::Point lineStart, geometry_msgs::msg::Point lineEnd, gbeam2_interfaces::msg::Vertex point) {
+    double value;
+    double m = (lineEnd.y - lineStart.y) / (lineEnd.x - lineStart.x) ;
+    bool is_inside;
+    double q_end = lineEnd.y - (-1/m)*lineEnd.x;
+    double q_start = lineStart.y - (-1/m)*lineStart.x;
+    if ((point.y - (-1/m)*point.x - q_end<0 && point.y - (-1/m)*point.x - q_start>0) || (point.y - (-1/m)*point.x - q_end>0 && point.y - (-1/m)*point.x - q_start<0))
+    {
+      is_inside =true;
+    }
+    value = (lineEnd.x - lineStart.x) * (point.y - lineStart.y) - 
            (lineEnd.y - lineStart.y) * (point.x - lineStart.x);
+    
+
+    return std::make_pair(value, is_inside);
+}
+
+std::pair<double, bool> sideOfLine(gbeam2_interfaces::msg::Vertex lineStart, gbeam2_interfaces::msg::Vertex  lineEnd, gbeam2_interfaces::msg::Vertex point) {
+    double value;
+    double m = (lineEnd.y - lineStart.y) / (lineEnd.x - lineStart.x) ;
+    bool is_inside;
+    double q_end = lineEnd.y - (-1/m)*lineEnd.x;
+    double q_start = lineStart.y - (-1/m)*lineStart.x;
+    if ((point.y - (-1/m)*point.x - q_end<0 && point.y - (-1/m)*point.x - q_start>0) || (point.y - (-1/m)*point.x - q_end>0 && point.y - (-1/m)*point.x - q_start<0))
+    {
+      is_inside =true;
+    }
+    value = (lineEnd.x - lineStart.x) * (point.y - lineStart.y) - 
+           (lineEnd.y - lineStart.y) * (point.x - lineStart.x);
+    
+
+    return std::make_pair(value, is_inside);
 }
 
   void odomCallback(const nav_msgs::msg::Odometry::SharedPtr odom_ptr)
@@ -208,41 +309,67 @@ private:
       
       for(auto node: merged_obstacles){
         // compute value of the inequality mx-y>0, evaluated for joint vector direction
-        float value = sideOfLine(received_status->current_position.pose.pose.position,robot_odom_.pose.pose.position,node);
-        if(value>0)
-          obstacles_right.push_back(node);
-        else
-          obstacles_left.push_back(node);
+        auto [value, is_inside] = sideOfLine(received_status->current_position.pose.pose.position,robot_odom_.pose.pose.position,node);
+        if(is_inside){
+          if(value>0) obstacles_right.push_back(node);
+          else obstacles_left.push_back(node);
+        } 
       }
       //RCLCPP_INFO(this->get_logger(), "Evaluate obstacles");
 
       for(auto node: merged_reachables){
         // compute value of the inequality mx-y>0, evaluated for joint vector direction
-        float value = sideOfLine(received_status->current_position.pose.pose.position,robot_odom_.pose.pose.position,node);
-        if(value>0)
-          reachables_right.push_back(node);
-        else
-          reachables_left.push_back(node);
+        auto [value, is_inside] = sideOfLine(received_status->current_position.pose.pose.position,robot_odom_.pose.pose.position,node);
+        if(is_inside){
+          if(value>0) reachables_right.push_back(node);
+          else reachables_left.push_back(node);
+        } 
       }
+      gbeam2_interfaces::msg::FrontierStamped resulted_frontier;
+      std::vector<gbeam2_interfaces::msg::Vertex> candidates_reach_nodes;
+
       std::pair<gbeam2_interfaces::msg::Vertex, gbeam2_interfaces::msg::Vertex> obs_min_pair;
       double min_dist = INF;
+      int count_reach = 0; // How many reachables node are in between the two obstacles 
+
       for (int i = 0; i < obstacles_right.size(); i++){
         for (int j = i+1; j < obstacles_left.size(); j++){
           double dist_ij = dist(obstacles_right[i],obstacles_left[j]);
-              if(dist_ij>0.05 && dist_ij<min_dist){
-                min_dist = dist_ij;  
-                obs_min_pair = std::make_pair(obstacles_right[i],obstacles_left[j]) ;
+              if(dist_ij>0.3 && dist_ij<min_dist){
+                candidates_reach_nodes.clear();
+                  for(auto reach_node : merged_reachables){
+
+                    auto [value, is_inside_line] = sideOfLine(obstacles_right[i],obstacles_left[j],reach_node);
+                    bool is_insideEllipse = Ellipse(obstacles_right[i],obstacles_left[j],0.2*dist_ij).isInside(reach_node);
+                    if (is_inside_line && is_insideEllipse){
+                      candidates_reach_nodes.push_back(reach_node);
+                    }  
+                    
+                  }
+                  if(candidates_reach_nodes.size()>0){
+                    min_dist = dist_ij;
+                    resulted_frontier.frontier.vertices_reachable = candidates_reach_nodes;  
+                    obs_min_pair = std::make_pair(obstacles_right[i],obstacles_left[j]) ;
+                  }
+                
                 }   
         }
       }
-      RCLCPP_INFO(this->get_logger(),"Best frontier obstacles node: RIGHT: id: %ld of rob: %ld, LEFT: id: %ld of rob: %ld",obs_min_pair.first.id,obs_min_pair.first.belong_to,obs_min_pair.second.id,obs_min_pair.second.belong_to);
+      //RCLCPP_INFO(this->get_logger(),"Best frontier obstacles node: RIGHT: id: %ld of rob: %ld, LEFT: id: %ld of rob: %ld",obs_min_pair.first.id,obs_min_pair.first.belong_to,obs_min_pair.second.id,obs_min_pair.second.belong_to);
       
+      // I need some condition to understand if the candidate frontier has to be added 
+      // in the list of shared frontiers 
+      
+      /*bool is_already_frontier =false;
+      for(auto& frontier:last_status[name_space_id].frontiers){
+        if(frontier.frontier.vertices_obstacles.)
+      }*/
+      
+      
+      resulted_frontier.frontier.vertices_obstacles.push_back(obs_min_pair.first);
+      resulted_frontier.frontier.vertices_obstacles.push_back(obs_min_pair.second);
 
-      gbeam2_interfaces::msg::FrontierStamped resulted_frontier;
-
-      resulted_frontier.frontier.vertices_obstacles = obstacles_right;
-
-      resulted_frontier.frontier.vertices_reachable = obstacles_left;
+      //resulted_frontier.frontier.vertices_reachable = [];
 
       frontier_pub_->publish(resulted_frontier);
 

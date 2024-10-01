@@ -39,7 +39,8 @@ public:
     {
         joint_line_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/status_visualization/joint_line", 1);
         joint_vectors_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/status_visualization/joint_vectors", 1);
-        graph_nodes_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("/status_visualization/frontiers", 1);
+        frontier_line_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/status_visualization/frontier_lines",1);
+        graph_nodes_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("/status_visualization/frontiers_point", 1);
 
         status_sub_ = this->create_subscription<gbeam2_interfaces::msg::Status>(
             "/status", 1,
@@ -84,6 +85,7 @@ private:
 
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr joint_vectors_pub_; 
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr joint_line_pub_; 
+    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr frontier_line_pub_; 
     rclcpp::Subscription<gbeam2_interfaces::msg::Status>::SharedPtr status_sub_;
     rclcpp::Subscription<gbeam2_interfaces::msg::FrontierStamped>::SharedPtr frontier_sub_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr graph_nodes_pub;
@@ -153,6 +155,11 @@ private:
 
         //initialize node_points for /graph_nodes
         sensor_msgs::msg::PointCloud node_points;
+        visualization_msgs::msg::Marker frontier_lines;
+        frontier_lines.ns = "comm_drawer";
+        frontier_lines.id = 1;
+        frontier_lines.type = visualization_msgs::msg::Marker::LINE_STRIP;
+        frontier_lines.scale.x = 0.02 * scaling;
         sensor_msgs::msg::ChannelFloat32 rightORleft;
 
         //add nodes and nodes normals
@@ -162,6 +169,8 @@ private:
             point.x = received_frontier->frontier.vertices_obstacles[n].x;
             point.y = received_frontier->frontier.vertices_obstacles[n].y;
             point.z = received_frontier->frontier.vertices_obstacles[n].z;
+            geometry_msgs::msg::Point p; p.x = point.x;p.y = point.y; p.z= point.z;
+            frontier_lines.points.push_back(p);
             node_points.points.push_back(point);
             rightORleft.values.push_back(1); //1 right
 

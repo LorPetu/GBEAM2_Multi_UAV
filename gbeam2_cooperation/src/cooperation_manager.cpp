@@ -105,6 +105,10 @@ public:
 
     merged_graph_sub_= this->create_subscription<gbeam2_interfaces::msg::Graph>(
       "gbeam/merged_graph",1,std::bind(&CooperationNode::mergedGraphCallback,this,std::placeholders::_1));
+
+    // Get namespace
+    name_space = this->get_namespace();
+    name_space_id = name_space.back()- '0';
     
 
     std::string filter_string = "robot_id!=%0";          
@@ -125,11 +129,6 @@ public:
 
      start_frontiers_service_ = this->create_service<std_srvs::srv::SetBool>(
         "start_frontier",std::bind(&CooperationNode::startFrontier,this, std::placeholders::_1, std::placeholders::_2));
-
-
-   // Get namespace
-    name_space = this->get_namespace();
-    name_space_id = name_space.back()- '0';
 
      // Initialize parameters
     this->declare_parameter<int>("N_robot",0);
@@ -204,9 +203,9 @@ private:
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr  start_frontiers_service_;
 
 
-   void startFrontier(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, std::shared_ptr<std_srvs::srv::SetBool::Response> response){
-        start_frontier=request->data;     
-    }
+  void startFrontier(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, std::shared_ptr<std_srvs::srv::SetBool::Response> response){
+      start_frontier=request->data;     
+  }
   std::pair<double, bool> sideOfLine(geometry_msgs::msg::Point lineStart, geometry_msgs::msg::Point lineEnd, gbeam2_interfaces::msg::Vertex point) {
     double value;
     double m = (lineEnd.y - lineStart.y) / (lineEnd.x - lineStart.x) ;
@@ -224,7 +223,7 @@ private:
     return std::make_pair(value, is_inside);
 }
 
-std::pair<double, bool> sideOfLine(gbeam2_interfaces::msg::Vertex lineStart, gbeam2_interfaces::msg::Vertex  lineEnd, gbeam2_interfaces::msg::Vertex point) {
+  std::pair<double, bool> sideOfLine(gbeam2_interfaces::msg::Vertex lineStart, gbeam2_interfaces::msg::Vertex  lineEnd, gbeam2_interfaces::msg::Vertex point) {
     double value;
     double m = (lineEnd.y - lineStart.y) / (lineEnd.x - lineStart.x) ;
     bool is_inside;
@@ -286,10 +285,69 @@ std::pair<double, bool> sideOfLine(gbeam2_interfaces::msg::Vertex lineStart, gbe
 
   void statusCallback(const gbeam2_interfaces::msg::Status::SharedPtr received_status){
     last_status[received_status->robot_id]=*received_status;
-    // if the received robot has a connection with this robot AND last frontier is explored?
-    //if(!start_frontier) return;
+
+    auto my_pos = robot_odom_.pose.pose.position; // Odom position of the robot itself
+    auto rec_pos = received_status->current_position.pose.pose.position; // Received position of the other robot
+
+    if(stored_Graph[name_space_id]->nodes.size()==0) return;
+    
 
     if(received_status->connection_status[name_space_id]){
+
+        // Check if there is intersection in already existing stored frontiers and the one that i'receiving
+      bool new_frontier = true;
+      for(auto& frontier:received_status->frontiers){
+        gbeam2_interfaces::msg::Vertex obs1 =  frontier.frontier.vertices_obstacles[0];
+        gbeam2_interfaces::msg::Vertex obs2 =  frontier.frontier.vertices_obstacles[1];
+
+        // Check it there's an intersection between two segment: 
+        // my_pos - rec_pos: the segment between the 2 robot
+        // obs1   - obs2:    the segment between the two obstacles boundary vertex.  
+
+        double t = ((my_pos.x -rec_pos.x)*(obs1.y - obs2.y) - (my_pos.y - rec_pos.y)*(obs1.x - obs2.x)==0) ? -1 : 
+                    ((my_pos.x - obs1.x)*(obs1.y - obs2.y) - (my_pos.y - obs1.y)*(obs1.x - obs2.x))
+                  / ((my_pos.x -rec_pos.x)*(obs1.y - obs2.y) - (my_pos.y - rec_pos.y)*(obs1.x - obs2.x));
+
+        double u = ((my_pos.x - rec_pos.x)*(obs1.y-obs2.y) - (my_pos.y-rec_pos.y)*(obs1.x-obs2.x)==0) ? -1 : 
+                  -((my_pos.x - rec_pos.x)*(my_pos.y - obs1.y) - (my_pos.y-rec_pos.y)*(my_pos.x - obs1.x))
+                  / ((my_pos.x - rec_pos.x)*(obs1.y-obs2.y) - (my_pos.y-rec_pos.y)*(obs1.x-obs2.x));
+
+        if(t>=0.0 && t<=1.0 && u>=0.0 && u<=1.0) 
+        {
+          new_frontier = false;
+          RCLCPP_INFO(this->get_logger(),"I've found already a frontier in the %d frontiters",received_status->robot_id);
+        }
+      }
+
+      if(new_frontier){
+        for(auto& frontier:last_status[name_space_id].frontiers){
+          if(frontier.shared_with == received_status->robot_id){ // Evaluate only frontiers shared with the status i'm receiving 
+            gbeam2_interfaces::msg::Vertex obs1 =  frontier.frontier.vertices_obstacles[0];
+            gbeam2_interfaces::msg::Vertex obs2 =  frontier.frontier.vertices_obstacles[1];
+
+            // Check it there's an intersection between two segment: 
+            // my_pos - rec_pos: the segment between the 2 robot
+            // obs1   - obs2:    the segment between the two obstacles boundary vertex.  
+
+            double t = ((my_pos.x -rec_pos.x)*(obs1.y - obs2.y) - (my_pos.y - rec_pos.y)*(obs1.x - obs2.x)==0) ? -1 : 
+                        ((my_pos.x - obs1.x)*(obs1.y - obs2.y) - (my_pos.y - obs1.y)*(obs1.x - obs2.x))
+                      / ((my_pos.x -rec_pos.x)*(obs1.y - obs2.y) - (my_pos.y - rec_pos.y)*(obs1.x - obs2.x));
+
+            double u = ((my_pos.x - rec_pos.x)*(obs1.y-obs2.y) - (my_pos.y-rec_pos.y)*(obs1.x-obs2.x)==0) ? -1 : 
+                      -((my_pos.x - rec_pos.x)*(my_pos.y - obs1.y) - (my_pos.y-rec_pos.y)*(my_pos.x - obs1.x))
+                      / ((my_pos.x - rec_pos.x)*(obs1.y-obs2.y) - (my_pos.y-rec_pos.y)*(obs1.x-obs2.x));
+            
+            if(t>=0 && t<=1 && u>=0 && u<=1)
+            {
+              new_frontier = false;
+              RCLCPP_INFO(this->get_logger(),"I've already found a frontier in my frontiers");
+            }
+          }
+        }
+      }
+
+      if(!new_frontier) return; 
+      RCLCPP_INFO(this->get_logger(),"Computing a new frontier...");
       
       //RCLCPP_INFO(this->get_logger(), "I have connection with robot %d",received_status->robot_id);
       gbeam2_interfaces::msg::FreePolygonStamped received_poly = get_obstacles_and_reachable_nodes(stored_Graph[received_status->robot_id]);
@@ -340,7 +398,7 @@ std::pair<double, bool> sideOfLine(gbeam2_interfaces::msg::Vertex lineStart, gbe
                   for(auto reach_node : merged_reachables){
 
                     auto [value, is_inside_line] = sideOfLine(obstacles_right[i],obstacles_left[j],reach_node);
-                    bool is_insideEllipse = Ellipse(obstacles_right[i],obstacles_left[j],0.2*dist_ij).isInside(reach_node);
+                    bool is_insideEllipse = Ellipse(obstacles_right[i],obstacles_left[j],elipse_scaling_obs*dist_ij).isInside(reach_node);
                     if (is_inside_line && is_insideEllipse){
                       candidates_reach_nodes.push_back(reach_node);
                     }  
@@ -359,19 +417,27 @@ std::pair<double, bool> sideOfLine(gbeam2_interfaces::msg::Vertex lineStart, gbe
       
       // I need some condition to understand if the candidate frontier has to be added 
       // in the list of shared frontiers 
-      
-      /*bool is_already_frontier =false;
-      for(auto& frontier:last_status[name_space_id].frontiers){
-        if(frontier.frontier.vertices_obstacles.)
-      }*/
-      
-      
-      resulted_frontier.frontier.vertices_obstacles.push_back(obs_min_pair.first);
-      resulted_frontier.frontier.vertices_obstacles.push_back(obs_min_pair.second);
+      if (min_dist!=INF){
+        resulted_frontier.id = last_status[name_space_id].frontiers.size();
+        resulted_frontier.shared_with = received_status->robot_id; 
+        //resulted_frontier.header = 
+        resulted_frontier.is_assigned = false;
+        resulted_frontier.is_explored = false;
+        resulted_frontier.type = 0; // 0 is SHARED, 1 FREE
+        
+        resulted_frontier.frontier.vertices_obstacles.push_back(obs_min_pair.first);
+        resulted_frontier.frontier.vertices_obstacles.push_back(obs_min_pair.second);
 
-      //resulted_frontier.frontier.vertices_reachable = [];
+        //resulted_frontier.frontier.vertices_reachable = [];
 
-      frontier_pub_->publish(resulted_frontier);
+        last_status[name_space_id].frontiers.push_back(resulted_frontier);
+
+        frontier_pub_->publish(resulted_frontier);
+      }
+
+      
+
+      // If a new frontier is computed i need to partion the graph taking into account the new frontier
 
     }
   }

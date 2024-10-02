@@ -253,7 +253,7 @@ private:
 
                 prev_updateBuffer[req_robot_id]=curr_updateBuffer[req_robot_id];
                 response->success = updateResponse.success;
-                RCLCPP_WARN(this->get_logger(), "SERVER [%d]: Data received from %d has been processed by graph_update", name_space_id, req_robot_id);
+                //RCLCPP_INFO(this->get_logger(), "SERVER [%d]: Data received from %d has been processed by graph_update", name_space_id, req_robot_id);
             
             } else {
                 // Timeout occurred

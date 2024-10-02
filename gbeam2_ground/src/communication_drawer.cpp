@@ -40,18 +40,11 @@ public:
         joint_line_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/status_visualization/joint_line", 1);
         joint_vectors_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/status_visualization/joint_vectors", 1);
         frontier_line_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/status_visualization/frontier_lines",1);
-        graph_nodes_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("/status_visualization/frontiers_point", 1);
+        frontier_point_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("/status_visualization/frontiers_point", 1);
 
         status_sub_ = this->create_subscription<gbeam2_interfaces::msg::Status>(
             "/status", 1,
-            std::bind(&CommDrawer::statusCallback, this, std::placeholders::_1));
-
-        frontier_sub_ = this->create_subscription<gbeam2_interfaces::msg::FrontierStamped>(
-            "/robot0/frontier", 1,
-            std::bind(&CommDrawer::frontierCallback, this, std::placeholders::_1));
-
-
-        
+            std::bind(&CommDrawer::statusCallback, this, std::placeholders::_1));      
 
         
 
@@ -88,7 +81,7 @@ private:
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr frontier_line_pub_; 
     rclcpp::Subscription<gbeam2_interfaces::msg::Status>::SharedPtr status_sub_;
     rclcpp::Subscription<gbeam2_interfaces::msg::FrontierStamped>::SharedPtr frontier_sub_;
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr graph_nodes_pub;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr frontier_point_pub_;
 
     float scaling;
     int N_robot;
@@ -104,7 +97,7 @@ private:
         pointcloud2_msg.is_bigendian = false;
         
         // Define fields
-        pointcloud2_msg.fields.resize(4); // x, y, z, exp_gain, is_obstacle, is_completely_connected, node_id
+        pointcloud2_msg.fields.resize(5); // x, y, z, exp_gain, is_obstacle, is_completely_connected, node_id
         pointcloud2_msg.fields[0].name = "x";
         pointcloud2_msg.fields[0].offset = 0;
         pointcloud2_msg.fields[0].datatype = sensor_msgs::msg::PointField::FLOAT32;
@@ -120,12 +113,17 @@ private:
         pointcloud2_msg.fields[2].datatype = sensor_msgs::msg::PointField::FLOAT32;
         pointcloud2_msg.fields[2].count = 1;
         
-        pointcloud2_msg.fields[3].name = "left_or_right";
+        pointcloud2_msg.fields[3].name = "obs_or_reach";
         pointcloud2_msg.fields[3].offset = 12;
         pointcloud2_msg.fields[3].datatype = sensor_msgs::msg::PointField::UINT8;
         pointcloud2_msg.fields[3].count = 1;
 
-        pointcloud2_msg.point_step = 13;  //Corrected point_step value: 3 fields x 4 bytes (for x, y, z) + 1 field x 1 byte (for left_or_right)
+        pointcloud2_msg.fields[4].name = "robot_id";
+        pointcloud2_msg.fields[4].offset = 16;
+        pointcloud2_msg.fields[4].datatype = sensor_msgs::msg::PointField::UINT8;
+        pointcloud2_msg.fields[4].count = 1;
+
+        pointcloud2_msg.point_step = 17;  //Corrected point_step value: 3 fields x 4 bytes (for x, y, z) + 1 field x 1 byte (for obs_or_reach)
         pointcloud2_msg.row_step = pointcloud2_msg.point_step * pointcloud2_msg.width;
         
         // Reserve memory for the point data
@@ -134,64 +132,22 @@ private:
         sensor_msgs::PointCloud2Iterator<float> iter_x(pointcloud2_msg, "x");
         sensor_msgs::PointCloud2Iterator<float> iter_y(pointcloud2_msg, "y");
         sensor_msgs::PointCloud2Iterator<float> iter_z(pointcloud2_msg, "z");
-        sensor_msgs::PointCloud2Iterator<uint8_t> iter_is_LR(pointcloud2_msg, "left_or_right");
+        sensor_msgs::PointCloud2Iterator<uint8_t> iter_is_LR(pointcloud2_msg, "obs_or_reach");
+        sensor_msgs::PointCloud2Iterator<uint8_t> iter_robot_id(pointcloud2_msg, "robot_id");
 
         
-        for (size_t i = 0; i < msg.points.size(); ++i, ++iter_x, ++iter_y, ++iter_z, ++iter_is_LR)
+        for (size_t i = 0; i < msg.points.size(); ++i, ++iter_x, ++iter_y, ++iter_z, ++iter_is_LR, ++iter_robot_id)
         {
             *iter_x = msg.points[i].x;
             *iter_y = msg.points[i].y;
             *iter_z = msg.points[i].z;
-            *iter_is_LR = static_cast<uint8_t>(msg.channels[0].values[i]);          
+            *iter_is_LR = static_cast<uint8_t>(msg.channels[0].values[i]);    
+            *iter_robot_id = static_cast<uint8_t>(msg.channels[1].values[i]);        
         }
         
         // return PointCloud2 message
         return pointcloud2_msg;
     };
-
-    void frontierCallback(const gbeam2_interfaces::msg::FrontierStamped::SharedPtr received_frontier){
-
-        std::string target_frame =  "robot0/odom"; //becasue lookupTransform doesn't allow "/" as first character
-
-        //initialize node_points for /graph_nodes
-        sensor_msgs::msg::PointCloud node_points;
-        visualization_msgs::msg::Marker frontier_lines;
-        frontier_lines.ns = "comm_drawer";
-        frontier_lines.id = 1;
-        frontier_lines.type = visualization_msgs::msg::Marker::LINE_STRIP;
-        frontier_lines.scale.x = 0.02 * scaling;
-        sensor_msgs::msg::ChannelFloat32 rightORleft;
-
-        //add nodes and nodes normals
-        for (int n = 0; n < received_frontier->frontier.vertices_obstacles.size(); n++)
-        {
-            geometry_msgs::msg::Point32 point;
-            point.x = received_frontier->frontier.vertices_obstacles[n].x;
-            point.y = received_frontier->frontier.vertices_obstacles[n].y;
-            point.z = received_frontier->frontier.vertices_obstacles[n].z;
-            geometry_msgs::msg::Point p; p.x = point.x;p.y = point.y; p.z= point.z;
-            frontier_lines.points.push_back(p);
-            node_points.points.push_back(point);
-            rightORleft.values.push_back(1); //1 right
-
-        }
-        for (int n = 0; n < received_frontier->frontier.vertices_reachable.size(); n++)
-        {
-            geometry_msgs::msg::Point32 point;
-            point.x = received_frontier->frontier.vertices_reachable[n].x;
-            point.y = received_frontier->frontier.vertices_reachable[n].y;
-            point.z = received_frontier->frontier.vertices_reachable[n].z;
-            node_points.points.push_back(point);
-            rightORleft.values.push_back(0); //0 left
-
-        }
-        node_points.channels.push_back(rightORleft);
-        node_points.header.frame_id = target_frame;
-
-        sensor_msgs::msg::PointCloud2 node_points_2 = pointCloudTOpointCloud2(node_points);
-
-        graph_nodes_pub->publish(node_points_2);
-    }
 
   void statusCallback(const gbeam2_interfaces::msg::Status::SharedPtr received_status){
     curr_status[received_status->robot_id] = *received_status;
@@ -230,6 +186,19 @@ private:
     connected_lines_color.g = 1.0;
     connected_lines_color.b = 0.0;
     connected_lines_color.a = 1.0;
+
+    std::string target_frame =  "robot0/odom"; //becasue lookupTransform doesn't allow "/" as first character
+
+    //initialize node_points for /graph_nodes
+    sensor_msgs::msg::PointCloud node_points;
+    visualization_msgs::msg::Marker frontier_lines;
+    frontier_lines.ns = "comm_drawer";
+    frontier_lines.id = 1;
+    frontier_lines.type = visualization_msgs::msg::Marker::LINE_STRIP;
+    frontier_lines.scale.x = 0.02 * scaling;
+    sensor_msgs::msg::ChannelFloat32 ObsORReach;
+    sensor_msgs::msg::ChannelFloat32 robot_id;
+ 
  
     for (int i = 0; i < N_robot; i++) {
         for (int j = i + 1; j < N_robot; j++) { 
@@ -242,6 +211,8 @@ private:
             } else {
                 joint_line_markers.colors.push_back(connected_lines_color);
                 joint_line_markers.colors.push_back(connected_lines_color);
+            }
+                
 
                 // Calculate the median point between robot i and robot j
                 geometry_msgs::msg::Point median;
@@ -275,16 +246,56 @@ private:
                     }
                 }
 
+                for(int z=0; z<curr_status[i].frontiers.size(); z++){
+                    //add nodes and nodes normals
+                    for (int n = 0; n < curr_status[i].frontiers[z].frontier.vertices_obstacles.size(); n++)
+                    {
+                        //if(curr_status[i].frontiers[z].shared_with == j){
+                            geometry_msgs::msg::Point32 point;
+                            point.x = curr_status[i].frontiers[z].frontier.vertices_obstacles[n].x;
+                            point.y = curr_status[i].frontiers[z].frontier.vertices_obstacles[n].y;
+                            point.z = curr_status[i].frontiers[z].frontier.vertices_obstacles[n].z;
+                            geometry_msgs::msg::Point p; p.x = point.x;p.y = point.y; p.z= point.z;
+                            frontier_lines.points.push_back(p);
+                            node_points.points.push_back(point);
+                            robot_id.values.push_back(i);
+                            ObsORReach.values.push_back(1);
+                        //} 
+
+                    }
+                    for (int n = 0; n < curr_status[i].frontiers[z].frontier.vertices_reachable.size(); n++)
+                    {
+                        //if(curr_status[i].frontiers[z].shared_with == j){
+                            geometry_msgs::msg::Point32 point;
+                            point.x = curr_status[i].frontiers[z].frontier.vertices_reachable[n].x;
+                            point.y = curr_status[i].frontiers[z].frontier.vertices_reachable[n].y;
+                            point.z = curr_status[i].frontiers[z].frontier.vertices_reachable[n].z;
+                            node_points.points.push_back(point);
+                            robot_id.values.push_back(i);
+                            ObsORReach.values.push_back(0); 
+                        //}
+                       
+
+                    }
+                    
+                }
 
 
-            }
             
         }
     }
 
     joint_vector_markers.header.frame_id = "world";
     joint_line_markers.header.frame_id = "world";
+    node_points.header.frame_id = "world";
 
+    node_points.channels.push_back(ObsORReach);
+    node_points.channels.push_back(robot_id);
+
+
+    sensor_msgs::msg::PointCloud2 node_points_2 = pointCloudTOpointCloud2(node_points);
+
+    frontier_point_pub_->publish(node_points_2);
     joint_vectors_pub_->publish(joint_vector_markers);
     joint_line_pub_->publish(joint_line_markers);
 }

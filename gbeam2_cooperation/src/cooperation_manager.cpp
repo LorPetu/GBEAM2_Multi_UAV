@@ -206,6 +206,23 @@ private:
   void startFrontier(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, std::shared_ptr<std_srvs::srv::SetBool::Response> response){
       start_frontier=request->data;     
   }
+  bool checkIntersection(gbeam2_interfaces::msg::Vertex p1,gbeam2_interfaces::msg::Vertex p2,gbeam2_interfaces::msg::Vertex p3,gbeam2_interfaces::msg::Vertex p4){
+      // Check it there's an intersection between two segment: 
+      // p1 - rec_pos: the segment between the 2 robot
+      // p3   - p4:    the segment between the two obstacles boundary vertex.  
+
+      double t = ((p1.x -p2.x)*(p3.y - p4.y) - (p1.y - p2.y)*(p3.x - p4.x)==0) ? -1 : 
+                  ((p1.x - p3.x)*(p3.y - p4.y) - (p1.y - p3.y)*(p3.x - p4.x))
+                / ((p1.x -p2.x)*(p3.y - p4.y) - (p1.y - p2.y)*(p3.x - p4.x));
+
+      double u = ((p1.x - p2.x)*(p3.y-p4.y) - (p1.y-p2.y)*(p3.x-p4.x)==0) ? -1 : 
+                -((p1.x - p2.x)*(p1.y - p3.y) - (p1.y-p2.y)*(p1.x - p3.x))
+                / ((p1.x - p2.x)*(p3.y-p4.y) - (p1.y-p2.y)*(p3.x-p4.x));
+
+      return (t>=0.0 && t<=1.0 && u>=0.0 && u<=1.0) ? true : false;
+
+  }
+
   std::pair<double, bool> sideOfLine(geometry_msgs::msg::Point lineStart, geometry_msgs::msg::Point lineEnd, gbeam2_interfaces::msg::Vertex point) {
     double value;
     double m = (lineEnd.y - lineStart.y) / (lineEnd.x - lineStart.x) ;
@@ -296,28 +313,41 @@ private:
 
         // Check if there is intersection in already existing stored frontiers and the one that i'receiving
       bool new_frontier = true;
+      bool is_present = false;
       for(auto& frontier:received_status->frontiers){
-        gbeam2_interfaces::msg::Vertex obs1 =  frontier.frontier.vertices_obstacles[0];
-        gbeam2_interfaces::msg::Vertex obs2 =  frontier.frontier.vertices_obstacles[1];
+          gbeam2_interfaces::msg::Vertex obs1 =  frontier.frontier.vertices_obstacles[0];
+          gbeam2_interfaces::msg::Vertex obs2 =  frontier.frontier.vertices_obstacles[1];
 
-        // Check it there's an intersection between two segment: 
-        // my_pos - rec_pos: the segment between the 2 robot
-        // obs1   - obs2:    the segment between the two obstacles boundary vertex.  
+          // Check it there's an intersection between two segment: 
+          // my_pos - rec_pos: the segment between the 2 robot
+          // obs1   - obs2:    the segment between the two obstacles boundary vertex.  
 
-        double t = ((my_pos.x -rec_pos.x)*(obs1.y - obs2.y) - (my_pos.y - rec_pos.y)*(obs1.x - obs2.x)==0) ? -1 : 
-                    ((my_pos.x - obs1.x)*(obs1.y - obs2.y) - (my_pos.y - obs1.y)*(obs1.x - obs2.x))
-                  / ((my_pos.x -rec_pos.x)*(obs1.y - obs2.y) - (my_pos.y - rec_pos.y)*(obs1.x - obs2.x));
+          double t = ((my_pos.x -rec_pos.x)*(obs1.y - obs2.y) - (my_pos.y - rec_pos.y)*(obs1.x - obs2.x)==0) ? -1 : 
+                      ((my_pos.x - obs1.x)*(obs1.y - obs2.y) - (my_pos.y - obs1.y)*(obs1.x - obs2.x))
+                    / ((my_pos.x -rec_pos.x)*(obs1.y - obs2.y) - (my_pos.y - rec_pos.y)*(obs1.x - obs2.x));
 
-        double u = ((my_pos.x - rec_pos.x)*(obs1.y-obs2.y) - (my_pos.y-rec_pos.y)*(obs1.x-obs2.x)==0) ? -1 : 
-                  -((my_pos.x - rec_pos.x)*(my_pos.y - obs1.y) - (my_pos.y-rec_pos.y)*(my_pos.x - obs1.x))
-                  / ((my_pos.x - rec_pos.x)*(obs1.y-obs2.y) - (my_pos.y-rec_pos.y)*(obs1.x-obs2.x));
+          double u = ((my_pos.x - rec_pos.x)*(obs1.y-obs2.y) - (my_pos.y-rec_pos.y)*(obs1.x-obs2.x)==0) ? -1 : 
+                    -((my_pos.x - rec_pos.x)*(my_pos.y - obs1.y) - (my_pos.y-rec_pos.y)*(my_pos.x - obs1.x))
+                    / ((my_pos.x - rec_pos.x)*(obs1.y-obs2.y) - (my_pos.y-rec_pos.y)*(obs1.x-obs2.x));
 
-        if(t>=0.0 && t<=1.0 && u>=0.0 && u<=1.0) 
-        {
-          new_frontier = false;
-          RCLCPP_INFO(this->get_logger(),"I've found already a frontier in the %d frontiters",received_status->robot_id);
-        }
-      }
+          if(t>=0.0 && t<=1.0 && u>=0.0 && u<=1.0) 
+          {
+            new_frontier = false;
+            RCLCPP_INFO(this->get_logger(),"I've found already a frontier in the %d frontiers",received_status->robot_id);
+            // Add this frontier to mine if is not already present
+            for(auto& my_frontier:last_status[name_space_id].frontiers){
+              if(my_frontier.belong_to == frontier.belong_to && my_frontier.id == frontier.id ) is_present=true;
+            }
+            if(frontier.belong_to != name_space_id){
+              RCLCPP_INFO(this->get_logger(),"AND I add to mine",received_status->robot_id);
+              
+              last_status[name_space_id].frontiers.push_back(frontier);
+
+              frontier_pub_->publish(frontier);
+            }
+          }
+        
+    }
 
       if(new_frontier){
         for(auto& frontier:last_status[name_space_id].frontiers){
@@ -389,22 +419,39 @@ private:
       std::pair<gbeam2_interfaces::msg::Vertex, gbeam2_interfaces::msg::Vertex> obs_min_pair;
       double min_dist = INF;
       int count_reach = 0; // How many reachables node are in between the two obstacles 
+      bool has_bridge = false;
+      double dist_ij;
 
       for (int i = 0; i < obstacles_right.size(); i++){
-        for (int j = i+1; j < obstacles_left.size(); j++){
-          double dist_ij = dist(obstacles_right[i],obstacles_left[j]);
+        for (int j = 0; j < obstacles_left.size(); j++){
+          dist_ij = dist(obstacles_right[i],obstacles_left[j]);
               if(dist_ij>0.3 && dist_ij<min_dist){
-                candidates_reach_nodes.clear();
+                //candidates_reach_nodes.clear();
+                has_bridge = false;
                   for(auto reach_node : merged_reachables){
+                      int N = stored_Graph[reach_node.belong_to]->adj_matrix.size;
+                      auto start_alloc = stored_Graph[reach_node.belong_to]->adj_matrix.data.begin();
+                      auto edges_ids = std::vector<int>(start_alloc + reach_node.id * N, start_alloc + (reach_node.id + 1) * N);
+                      for(int sel_id:edges_ids){
+                        // TODO: make better condition, this doesn't work
+                        if(sel_id!=-1){ // && reach_node.belong_to!=name_space_id
+                          gbeam2_interfaces::msg::GraphEdge sel_edge = stored_Graph[reach_node.belong_to]->edges[sel_id]; 
+                          gbeam2_interfaces::msg::Vertex v1 = stored_Graph[reach_node.belong_to]->nodes[sel_edge.v1];
+                          gbeam2_interfaces::msg::Vertex v2 = stored_Graph[reach_node.belong_to]->nodes[sel_edge.v2];
 
-                    auto [value, is_inside_line] = sideOfLine(obstacles_right[i],obstacles_left[j],reach_node);
-                    bool is_insideEllipse = Ellipse(obstacles_right[i],obstacles_left[j],elipse_scaling_obs*dist_ij).isInside(reach_node);
-                    if (is_inside_line && is_insideEllipse){
-                      candidates_reach_nodes.push_back(reach_node);
-                    }  
+                          if(checkIntersection(obstacles_right[i],obstacles_left[j],v1,v2)){
+                            has_bridge = true;
+                            break;
+                          }
+                        }
+                        
+                      }
+                      
+                      //if(has_bridge) break;
+                    
                     
                   }
-                  if(candidates_reach_nodes.size()>0){
+                  if(has_bridge){
                     min_dist = dist_ij;
                     resulted_frontier.frontier.vertices_reachable = candidates_reach_nodes;  
                     obs_min_pair = std::make_pair(obstacles_right[i],obstacles_left[j]) ;
@@ -420,6 +467,7 @@ private:
       if (min_dist!=INF){
         resulted_frontier.id = last_status[name_space_id].frontiers.size();
         resulted_frontier.shared_with = received_status->robot_id; 
+        resulted_frontier.belong_to = name_space_id;
         //resulted_frontier.header = 
         resulted_frontier.is_assigned = false;
         resulted_frontier.is_explored = false;

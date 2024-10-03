@@ -97,7 +97,7 @@ private:
         pointcloud2_msg.is_bigendian = false;
         
         // Define fields
-        pointcloud2_msg.fields.resize(5); // x, y, z, exp_gain, is_obstacle, is_completely_connected, node_id
+        pointcloud2_msg.fields.resize(6); // x, y, z, exp_gain, is_obstacle, is_completely_connected, node_id
         pointcloud2_msg.fields[0].name = "x";
         pointcloud2_msg.fields[0].offset = 0;
         pointcloud2_msg.fields[0].datatype = sensor_msgs::msg::PointField::FLOAT32;
@@ -123,7 +123,12 @@ private:
         pointcloud2_msg.fields[4].datatype = sensor_msgs::msg::PointField::UINT8;
         pointcloud2_msg.fields[4].count = 1;
 
-        pointcloud2_msg.point_step = 17;  //Corrected point_step value: 3 fields x 4 bytes (for x, y, z) + 1 field x 1 byte (for obs_or_reach)
+        pointcloud2_msg.fields[5].name = "frontier_id";
+        pointcloud2_msg.fields[5].offset = 20;
+        pointcloud2_msg.fields[5].datatype = sensor_msgs::msg::PointField::UINT8;
+        pointcloud2_msg.fields[5].count = 1;
+
+        pointcloud2_msg.point_step = 21;  //Corrected point_step value: 3 fields x 4 bytes (for x, y, z) + 1 field x 1 byte (for obs_or_reach)
         pointcloud2_msg.row_step = pointcloud2_msg.point_step * pointcloud2_msg.width;
         
         // Reserve memory for the point data
@@ -134,15 +139,17 @@ private:
         sensor_msgs::PointCloud2Iterator<float> iter_z(pointcloud2_msg, "z");
         sensor_msgs::PointCloud2Iterator<uint8_t> iter_is_LR(pointcloud2_msg, "obs_or_reach");
         sensor_msgs::PointCloud2Iterator<uint8_t> iter_robot_id(pointcloud2_msg, "robot_id");
+        sensor_msgs::PointCloud2Iterator<uint8_t> iter_frontier_id(pointcloud2_msg, "frontier_id");
 
         
-        for (size_t i = 0; i < msg.points.size(); ++i, ++iter_x, ++iter_y, ++iter_z, ++iter_is_LR, ++iter_robot_id)
+        for (size_t i = 0; i < msg.points.size(); ++i, ++iter_x, ++iter_y, ++iter_z, ++iter_is_LR, ++iter_robot_id, ++iter_frontier_id)
         {
             *iter_x = msg.points[i].x;
             *iter_y = msg.points[i].y;
             *iter_z = msg.points[i].z;
             *iter_is_LR = static_cast<uint8_t>(msg.channels[0].values[i]);    
-            *iter_robot_id = static_cast<uint8_t>(msg.channels[1].values[i]);        
+            *iter_robot_id = static_cast<uint8_t>(msg.channels[1].values[i]); 
+            *iter_frontier_id = static_cast<uint8_t>(msg.channels[2].values[i]); 
         }
         
         // return PointCloud2 message
@@ -194,10 +201,11 @@ private:
     visualization_msgs::msg::Marker frontier_lines;
     frontier_lines.ns = "comm_drawer";
     frontier_lines.id = 1;
-    frontier_lines.type = visualization_msgs::msg::Marker::LINE_STRIP;
+    frontier_lines.type = visualization_msgs::msg::Marker::LINE_LIST;
     frontier_lines.scale.x = 0.02 * scaling;
     sensor_msgs::msg::ChannelFloat32 ObsORReach;
     sensor_msgs::msg::ChannelFloat32 robot_id;
+    sensor_msgs::msg::ChannelFloat32 frontier_id;
  
  
     for (int i = 0; i < N_robot; i++) {
@@ -260,6 +268,7 @@ private:
                             node_points.points.push_back(point);
                             robot_id.values.push_back(i);
                             ObsORReach.values.push_back(1);
+                            frontier_id.values.push_back(curr_status[i].frontiers[z].id);
                         //} 
 
                     }
@@ -273,6 +282,7 @@ private:
                             node_points.points.push_back(point);
                             robot_id.values.push_back(i);
                             ObsORReach.values.push_back(0); 
+                            frontier_id.values.push_back(curr_status[i].frontiers[z].id);
                         //}
                        
 
@@ -287,10 +297,12 @@ private:
 
     joint_vector_markers.header.frame_id = "world";
     joint_line_markers.header.frame_id = "world";
+    frontier_lines.header.frame_id = "world";
     node_points.header.frame_id = "world";
 
     node_points.channels.push_back(ObsORReach);
     node_points.channels.push_back(robot_id);
+    node_points.channels.push_back(frontier_id);
 
 
     sensor_msgs::msg::PointCloud2 node_points_2 = pointCloudTOpointCloud2(node_points);
@@ -298,6 +310,7 @@ private:
     frontier_point_pub_->publish(node_points_2);
     joint_vectors_pub_->publish(joint_vector_markers);
     joint_line_pub_->publish(joint_line_markers);
+    frontier_line_pub_->publish(frontier_lines);
 }
 
 

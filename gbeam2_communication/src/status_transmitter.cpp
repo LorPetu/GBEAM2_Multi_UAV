@@ -34,6 +34,9 @@ public:
   ref_pos_subscriber_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
             name_space+"gbeam/gbeam_pos_ref", 1, std::bind(&StatusTXNode::refPosCallback, this, std::placeholders::_1));
 
+  // Get namespace
+  name_space = this->get_namespace();
+  name_space_id = name_space.back()- '0';
 
   std::string filter_string = "robot_id!=%0";          
   rclcpp::SubscriptionOptions options;
@@ -52,11 +55,7 @@ public:
   status_pub_= this->create_publisher<gbeam2_interfaces::msg::Status>("/status",1);
 
   timer_ = this->create_wall_timer(std::chrono::milliseconds(500), std::bind(&StatusTXNode::statusloop, this));
-  
 
-  // Get namespace
-  name_space = this->get_namespace();
-  name_space_id = name_space.back()- '0';
 
   // Initialize parameters
   this->declare_parameter<int>("N_robot",0);
@@ -125,12 +124,12 @@ private:
 
   void frontierCallback(const gbeam2_interfaces::msg::FrontierStamped::SharedPtr received_frontier){
     last_received_frontier=*received_frontier;
-    if(last_received_frontier.id<curr_status[name_space_id].frontiers.size()) // The id is already present in the frontiers
+    for (int i = 0; i < curr_status[name_space_id].frontiers.size(); i++)
     {
-        curr_status[name_space_id].frontiers[last_received_frontier.id] = last_received_frontier;
-    } else {                                                                  // The id is not in the frontiers
-        curr_status[name_space_id].frontiers.push_back(last_received_frontier);
-    }    
+      if(last_received_frontier.belong_to==curr_status[name_space_id].frontiers[i].belong_to && last_received_frontier.id==curr_status[name_space_id].frontiers[i].id) return;
+    }
+
+    curr_status[name_space_id].frontiers.push_back(last_received_frontier);   
   }
 
   void statusloop(){

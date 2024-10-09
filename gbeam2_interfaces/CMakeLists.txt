@@ -27,6 +27,7 @@ set(msg_files
   "msg/Graph.msg"
   "msg/Status.msg"
   "msg/FrontierStamped.msg"
+  "msg/FrontierStampedArray.msg"
   "srv/SetMappingStatus.srv"
   "srv/GraphUpdate.srv"
 )

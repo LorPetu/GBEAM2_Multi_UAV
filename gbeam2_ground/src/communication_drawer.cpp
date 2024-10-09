@@ -87,6 +87,7 @@ private:
     int N_robot;
     double wifi_range;
     std::vector<gbeam2_interfaces::msg::Status> curr_status;
+
     sensor_msgs::msg::PointCloud2 pointCloudTOpointCloud2(const sensor_msgs::msg::PointCloud msg)
     {
         sensor_msgs::msg::PointCloud2 pointcloud2_msg;
@@ -186,13 +187,13 @@ private:
     lines_color.r = 1.0;
     lines_color.g = 0.0;
     lines_color.b = 0.0;
-    lines_color.a = 1.0;
+    lines_color.a = 0.7;
     // Colors for the markers
     std_msgs::msg::ColorRGBA connected_lines_color;
     connected_lines_color.r = 0.0;
     connected_lines_color.g = 1.0;
     connected_lines_color.b = 0.0;
-    connected_lines_color.a = 1.0;
+    connected_lines_color.a = 0.7;
 
     std::string target_frame =  "robot0/odom"; //becasue lookupTransform doesn't allow "/" as first character
 
@@ -254,43 +255,48 @@ private:
                     }
                 }
 
-                for(int z=0; z<curr_status[i].frontiers.size(); z++){
-                    //add nodes and nodes normals
-                    for (int n = 0; n < curr_status[i].frontiers[z].frontier.vertices_obstacles.size(); n++)
-                    {
-                        //if(curr_status[i].frontiers[z].shared_with == j){
-                            geometry_msgs::msg::Point32 point;
-                            point.x = curr_status[i].frontiers[z].frontier.vertices_obstacles[n].x;
-                            point.y = curr_status[i].frontiers[z].frontier.vertices_obstacles[n].y;
-                            point.z = curr_status[i].frontiers[z].frontier.vertices_obstacles[n].z;
-                            geometry_msgs::msg::Point p; p.x = point.x;p.y = point.y; p.z= point.z;
-                            frontier_lines.points.push_back(p);
-                            node_points.points.push_back(point);
-                            robot_id.values.push_back(i);
-                            ObsORReach.values.push_back(1);
-                            frontier_id.values.push_back(curr_status[i].frontiers[z].id);
-                        //} 
 
-                    }
-                    for (int n = 0; n < curr_status[i].frontiers[z].frontier.vertices_reachable.size(); n++)
-                    {
-                        //if(curr_status[i].frontiers[z].shared_with == j){
-                            geometry_msgs::msg::Point32 point;
-                            point.x = curr_status[i].frontiers[z].frontier.vertices_reachable[n].x;
-                            point.y = curr_status[i].frontiers[z].frontier.vertices_reachable[n].y;
-                            point.z = curr_status[i].frontiers[z].frontier.vertices_reachable[n].z;
-                            node_points.points.push_back(point);
-                            robot_id.values.push_back(i);
-                            ObsORReach.values.push_back(0); 
-                            frontier_id.values.push_back(curr_status[i].frontiers[z].id);
-                        //}
-                       
-
-                    }
-                    
-                }
+            
+        }
 
 
+        for(int z=0; z<curr_status[i].frontiers.size(); z++){
+            //add nodes and nodes normals
+            if(curr_status[i].frontiers[z].belong_to==i){
+                for (int n = 0; n < curr_status[i].frontiers[z].frontier.vertices_obstacles.size(); n++)
+            {
+                //if(curr_status[i].frontiers[z].shared_with == j){
+                    geometry_msgs::msg::Point32 point;
+                    point.x = curr_status[i].frontiers[z].frontier.vertices_obstacles[n].x;
+                    point.y = curr_status[i].frontiers[z].frontier.vertices_obstacles[n].y;
+                    point.z = curr_status[i].frontiers[z].frontier.vertices_obstacles[n].z;
+                    geometry_msgs::msg::Point p; p.x = point.x;p.y = point.y; p.z= point.z;
+                    frontier_lines.points.push_back(p);
+                    frontier_lines.colors.push_back((curr_status[i].frontiers[z].type==1) ? connected_lines_color: lines_color);
+                    node_points.points.push_back(point);
+                    robot_id.values.push_back(i);
+                    ObsORReach.values.push_back(1);
+                    frontier_id.values.push_back(curr_status[i].frontiers[z].id);
+                //} 
+
+            }
+            for (int n = 0; n < curr_status[i].frontiers[z].frontier.vertices_reachable.size(); n++)
+            {
+                //if(curr_status[i].frontiers[z].shared_with == j){
+                    geometry_msgs::msg::Point32 point;
+                    point.x = curr_status[i].frontiers[z].frontier.vertices_reachable[n].x;
+                    point.y = curr_status[i].frontiers[z].frontier.vertices_reachable[n].y;
+                    point.z = curr_status[i].frontiers[z].frontier.vertices_reachable[n].z;
+                    node_points.points.push_back(point);
+                    robot_id.values.push_back(i);
+                    ObsORReach.values.push_back(0); 
+                    frontier_id.values.push_back(curr_status[i].frontiers[z].id);
+                //}
+                
+
+            }
+            }
+            
             
         }
     }

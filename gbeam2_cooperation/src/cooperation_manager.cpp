@@ -27,7 +27,11 @@
 
 #include "gbeam2_interfaces/msg/status.hpp"
 #include "gbeam2_interfaces/msg/frontier_stamped.hpp"
+#include "gbeam2_interfaces/msg/frontier_stamped_array.hpp"
 #include "library_fcn.hpp"
+
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <sensor_msgs/point_cloud2_iterator.hpp> // For easier point cloud population
 
 #define INF 100000
 
@@ -124,11 +128,14 @@ public:
     assigned_graph_pub_ = this->create_publisher<gbeam2_interfaces::msg::Graph>(
       "gbeam/assigned_graph",1);
 
-    frontier_pub_ = this->create_publisher<gbeam2_interfaces::msg::FrontierStamped>(
+    frontier_pub_ = this->create_publisher<gbeam2_interfaces::msg::FrontierStampedArray>(
       "frontier",1);
 
      start_frontiers_service_ = this->create_service<std_srvs::srv::SetBool>(
         "start_frontier",std::bind(&CooperationNode::startFrontier,this, std::placeholders::_1, std::placeholders::_2));
+
+      point_cloud_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
+        "merged_obstacles",1);
 
      // Initialize parameters
     this->declare_parameter<int>("N_robot",0);
@@ -181,6 +188,8 @@ private:
   int last_updated_node;
   int last_updated_edge;
   bool start_frontier = false;
+  int N_my_frontiers = 0;
+
 
   std::vector<gbeam2_interfaces::msg::Status> last_status;
   nav_msgs::msg::Odometry robot_odom_;
@@ -196,16 +205,21 @@ private:
   // Declare topics variables
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subscriber_;
   rclcpp::Subscription<gbeam2_interfaces::msg::Graph>::SharedPtr merged_graph_sub_;
-  rclcpp::Publisher<gbeam2_interfaces::msg::FrontierStamped>::SharedPtr frontier_pub_;
+  rclcpp::Publisher<gbeam2_interfaces::msg::FrontierStampedArray>::SharedPtr frontier_pub_;
   rclcpp::Subscription<gbeam2_interfaces::msg::Status>::SharedPtr status_sub_;
   rclcpp::Publisher<gbeam2_interfaces::msg::Graph>::SharedPtr assigned_graph_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr point_cloud_publisher_;
 
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr  start_frontiers_service_;
+
+  double deg_90 = M_PI / 2.0;
+  double deg_30 = M_PI / 6.0;
 
 
   void startFrontier(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, std::shared_ptr<std_srvs::srv::SetBool::Response> response){
       start_frontier=request->data;     
   }
+
   bool checkIntersection(gbeam2_interfaces::msg::Vertex p1,gbeam2_interfaces::msg::Vertex p2,gbeam2_interfaces::msg::Vertex p3,gbeam2_interfaces::msg::Vertex p4){
       // Check it there's an intersection between two segment: 
       // p1 - rec_pos: the segment between the 2 robot
@@ -223,39 +237,133 @@ private:
 
   }
 
+  bool checkIntersection(gbeam2_interfaces::msg::Vertex p1,geometry_msgs::msg::Point p2,gbeam2_interfaces::msg::Vertex p3,gbeam2_interfaces::msg::Vertex p4){
+      // Check it there's an intersection between two segment: 
+      // p1 - rec_pos: the segment between the 2 robot
+      // p3   - p4:    the segment between the two obstacles boundary vertex.  
+
+      double t = ((p1.x -p2.x)*(p3.y - p4.y) - (p1.y - p2.y)*(p3.x - p4.x)==0) ? -1 : 
+                  ((p1.x - p3.x)*(p3.y - p4.y) - (p1.y - p3.y)*(p3.x - p4.x))
+                / ((p1.x -p2.x)*(p3.y - p4.y) - (p1.y - p2.y)*(p3.x - p4.x));
+
+      double u = ((p1.x - p2.x)*(p3.y-p4.y) - (p1.y-p2.y)*(p3.x-p4.x)==0) ? -1 : 
+                -((p1.x - p2.x)*(p1.y - p3.y) - (p1.y-p2.y)*(p1.x - p3.x))
+                / ((p1.x - p2.x)*(p3.y-p4.y) - (p1.y-p2.y)*(p3.x-p4.x));
+
+      return (t>=0.0 && t<=1.0 && u>=0.0 && u<=1.0) ? true : false;
+
+  }
+
+  bool checkIntersection(geometry_msgs::msg::Point p1,geometry_msgs::msg::Point p2,gbeam2_interfaces::msg::Vertex p3,gbeam2_interfaces::msg::Vertex p4){
+    // Check it there's an intersection between two segment: 
+    // p1 - rec_pos: the segment between the 2 robot
+    // p3   - p4:    the segment between the two obstacles boundary vertex.  
+
+    double t = ((p1.x -p2.x)*(p3.y - p4.y) - (p1.y - p2.y)*(p3.x - p4.x)==0) ? -1 : 
+                ((p1.x - p3.x)*(p3.y - p4.y) - (p1.y - p3.y)*(p3.x - p4.x))
+              / ((p1.x -p2.x)*(p3.y - p4.y) - (p1.y - p2.y)*(p3.x - p4.x));
+
+    double u = ((p1.x - p2.x)*(p3.y-p4.y) - (p1.y-p2.y)*(p3.x-p4.x)==0) ? -1 : 
+              -((p1.x - p2.x)*(p1.y - p3.y) - (p1.y-p2.y)*(p1.x - p3.x))
+              / ((p1.x - p2.x)*(p3.y-p4.y) - (p1.y-p2.y)*(p3.x-p4.x));
+
+    return (t>=0.0 && t<=1.0 && u>=0.0 && u<=1.0) ? true : false;
+
+  }
+
   std::pair<double, bool> sideOfLine(geometry_msgs::msg::Point lineStart, geometry_msgs::msg::Point lineEnd, gbeam2_interfaces::msg::Vertex point) {
-    double value;
-    double m = (lineEnd.y - lineStart.y) / (lineEnd.x - lineStart.x) ;
-    bool is_inside;
-    double q_end = lineEnd.y - (-1/m)*lineEnd.x;
-    double q_start = lineStart.y - (-1/m)*lineStart.x;
-    if ((point.y - (-1/m)*point.x - q_end<0 && point.y - (-1/m)*point.x - q_start>0) || (point.y - (-1/m)*point.x - q_end>0 && point.y - (-1/m)*point.x - q_start<0))
-    {
-      is_inside =true;
-    }
-    value = (lineEnd.x - lineStart.x) * (point.y - lineStart.y) - 
-           (lineEnd.y - lineStart.y) * (point.x - lineStart.x);
-    
+      // 1. Compute the cross product to determine which side of the main line the point is on.
+      double cross_product = (lineEnd.x - lineStart.x) * (point.y - lineStart.y) - 
+                            (lineEnd.y - lineStart.y) * (point.x - lineStart.x);
+
+      // The value will be positive if the point is on one side, negative if on the other.
+      double value = cross_product;
+
+      // 2. Check if the point is within the perpendicular bounds defined by the start and end points.
+      // This can be done by projecting the point onto the main line, and seeing if the projected point lies between the start and end.
+
+      // Vector from lineStart to lineEnd
+      double dx = lineEnd.x - lineStart.x;
+      double dy = lineEnd.y - lineStart.y;
+
+      // Vector from lineStart to the point
+      double px = point.x - lineStart.x;
+      double py = point.y - lineStart.y;
+
+      // Project the point onto the line (calculate the projection scalar)
+      double dot_product = px * dx + py * dy;
+      double line_length_squared = dx * dx + dy * dy;
+      double projection = dot_product / line_length_squared;
+
+      // Check if the projection is between 0 and 1 (i.e., the point is between lineStart and lineEnd in the direction of the line)
+      bool is_inside = (projection >= 0 && projection <= 1);
+
+      return std::make_pair(value, is_inside);
+  }
+
+
+
+  std::pair<double, bool> sideOfLine(gbeam2_interfaces::msg::Vertex lineStart, gbeam2_interfaces::msg::Vertex lineEnd, gbeam2_interfaces::msg::Vertex point) {
+    // 1. Compute the cross product to determine which side of the main line the point is on.
+    double cross_product = (lineEnd.x - lineStart.x) * (point.y - lineStart.y) - 
+                           (lineEnd.y - lineStart.y) * (point.x - lineStart.x);
+
+    // The value will be positive if the point is on one side, negative if on the other.
+    double value = cross_product;
+
+    // 2. Check if the point is within the perpendicular bounds defined by the start and end points.
+    // This can be done by projecting the point onto the main line, and seeing if the projected point lies between the start and end.
+
+    // Vector from lineStart to lineEnd
+    double dx = lineEnd.x - lineStart.x;
+    double dy = lineEnd.y - lineStart.y;
+
+    // Vector from lineStart to the point
+    double px = point.x - lineStart.x;
+    double py = point.y - lineStart.y;
+
+    // Project the point onto the line (calculate the projection scalar)
+    double dot_product = px * dx + py * dy;
+    double line_length_squared = dx * dx + dy * dy;
+    double projection = dot_product / line_length_squared;
+
+    // Check if the projection is between 0 and 1 (i.e., the point is between lineStart and lineEnd in the direction of the line)
+    bool is_inside = (projection >= 0 && projection <= 1);
 
     return std::make_pair(value, is_inside);
 }
 
-  std::pair<double, bool> sideOfLine(gbeam2_interfaces::msg::Vertex lineStart, gbeam2_interfaces::msg::Vertex  lineEnd, gbeam2_interfaces::msg::Vertex point) {
-    double value;
-    double m = (lineEnd.y - lineStart.y) / (lineEnd.x - lineStart.x) ;
-    bool is_inside;
-    double q_end = lineEnd.y - (-1/m)*lineEnd.x;
-    double q_start = lineStart.y - (-1/m)*lineStart.x;
-    if ((point.y - (-1/m)*point.x - q_end<0 && point.y - (-1/m)*point.x - q_start>0) || (point.y - (-1/m)*point.x - q_end>0 && point.y - (-1/m)*point.x - q_start<0))
-    {
-      is_inside =true;
-    }
-    value = (lineEnd.x - lineStart.x) * (point.y - lineStart.y) - 
-           (lineEnd.y - lineStart.y) * (point.x - lineStart.x);
-    
+
+std::pair<double, bool> sideOfLine(gbeam2_interfaces::msg::Vertex lineStart,  geometry_msgs::msg::Point lineEnd, gbeam2_interfaces::msg::Vertex point) {
+    // 1. Compute the cross product to determine which side of the main line the point is on.
+    double cross_product = (lineEnd.x - lineStart.x) * (point.y - lineStart.y) - 
+                           (lineEnd.y - lineStart.y) * (point.x - lineStart.x);
+
+    // The value will be positive if the point is on one side, negative if on the other.
+    double value = cross_product;
+
+    // 2. Check if the point is within the perpendicular bounds defined by the start and end points.
+    // This can be done by projecting the point onto the main line, and seeing if the projected point lies between the start and end.
+
+    // Vector from lineStart to lineEnd
+    double dx = lineEnd.x - lineStart.x;
+    double dy = lineEnd.y - lineStart.y;
+
+    // Vector from lineStart to the point
+    double px = point.x - lineStart.x;
+    double py = point.y - lineStart.y;
+
+    // Project the point onto the line (calculate the projection scalar)
+    double dot_product = px * dx + py * dy;
+    double line_length_squared = dx * dx + dy * dy;
+    double projection = dot_product / line_length_squared;
+
+    // Check if the projection is between 0 and 1 (i.e., the point is between lineStart and lineEnd in the direction of the line)
+    bool is_inside = (projection >= 0 && projection <= 1);
 
     return std::make_pair(value, is_inside);
 }
+
 
   void odomCallback(const nav_msgs::msg::Odometry::SharedPtr odom_ptr)
   {
@@ -302,6 +410,12 @@ private:
 
   void statusCallback(const gbeam2_interfaces::msg::Status::SharedPtr received_status){
     last_status[received_status->robot_id]=*received_status;
+    if(!start_frontier) return;
+    tf2::Vector3 z_axiz(0.0,0.0,1.0);
+    std::pair<gbeam2_interfaces::msg::Vertex, gbeam2_interfaces::msg::Vertex> obs_min_pair;
+    gbeam2_interfaces::msg::FrontierStampedArray res_frontier_array;
+    gbeam2_interfaces::msg::FrontierStamped resulted_frontier;
+    double min_dist = INF;
 
     auto my_pos = robot_odom_.pose.pose.position; // Odom position of the robot itself
     auto rec_pos = received_status->current_position.pose.pose.position; // Received position of the other robot
@@ -311,177 +425,412 @@ private:
 
     if(received_status->connection_status[name_space_id]){
 
-        // Check if there is intersection in already existing stored frontiers and the one that i'receiving
-      bool new_frontier = true;
-      bool is_present = false;
+      bool compute_SHARED_frontier = true;  // If is needed to compute a new shared frontier in between the two drones
+      bool external_frontier = false;       // A frontier from the ones received is a compatible frontier
+      bool is_present = false;              // A frontier has been found among mine or among other's drone 
       for(auto& frontier:received_status->frontiers){
-          gbeam2_interfaces::msg::Vertex obs1 =  frontier.frontier.vertices_obstacles[0];
-          gbeam2_interfaces::msg::Vertex obs2 =  frontier.frontier.vertices_obstacles[1];
-
-          // Check it there's an intersection between two segment: 
-          // my_pos - rec_pos: the segment between the 2 robot
-          // obs1   - obs2:    the segment between the two obstacles boundary vertex.  
-
-          double t = ((my_pos.x -rec_pos.x)*(obs1.y - obs2.y) - (my_pos.y - rec_pos.y)*(obs1.x - obs2.x)==0) ? -1 : 
-                      ((my_pos.x - obs1.x)*(obs1.y - obs2.y) - (my_pos.y - obs1.y)*(obs1.x - obs2.x))
-                    / ((my_pos.x -rec_pos.x)*(obs1.y - obs2.y) - (my_pos.y - rec_pos.y)*(obs1.x - obs2.x));
-
-          double u = ((my_pos.x - rec_pos.x)*(obs1.y-obs2.y) - (my_pos.y-rec_pos.y)*(obs1.x-obs2.x)==0) ? -1 : 
-                    -((my_pos.x - rec_pos.x)*(my_pos.y - obs1.y) - (my_pos.y-rec_pos.y)*(my_pos.x - obs1.x))
-                    / ((my_pos.x - rec_pos.x)*(obs1.y-obs2.y) - (my_pos.y-rec_pos.y)*(obs1.x-obs2.x));
-
-          if(t>=0.0 && t<=1.0 && u>=0.0 && u<=1.0) 
-          {
-            new_frontier = false;
-            RCLCPP_INFO(this->get_logger(),"I've found already a frontier in the %d frontiers",received_status->robot_id);
-            // Add this frontier to mine if is not already present
-            for(auto& my_frontier:last_status[name_space_id].frontiers){
-              if(my_frontier.belong_to == frontier.belong_to && my_frontier.id == frontier.id ) is_present=true;
-            }
-            if(frontier.belong_to != name_space_id){
-              RCLCPP_INFO(this->get_logger(),"AND I add to mine",received_status->robot_id);
-              
-              last_status[name_space_id].frontiers.push_back(frontier);
-
-              frontier_pub_->publish(frontier);
-            }
+        if(frontier.belong_to!=name_space_id){ // Need to check only received frontier that are not created by me
+          if(checkIntersection(my_pos,rec_pos,frontier.frontier.vertices_obstacles[0],frontier.frontier.vertices_obstacles[1])){ 
+          external_frontier = true;
+          RCLCPP_INFO(this->get_logger(),"INTERSECTION: with frontier id: %d of %d -- TYPE: %s",frontier.id,frontier.belong_to,(frontier.type==1) ? "FREE" : "SHARED");
+          // Add this frontier to mine if is not already present
+          is_present = false;    
+          for(auto& my_frontier:last_status[name_space_id].frontiers){
+            if(my_frontier.belong_to == frontier.belong_to && my_frontier.id == frontier.id ) {
+              is_present=true;
+              compute_SHARED_frontier = false;
+              break; // no need to continue searching
+              }
           }
-        
-    }
-
-      if(new_frontier){
-        for(auto& frontier:last_status[name_space_id].frontiers){
-          if(frontier.shared_with == received_status->robot_id){ // Evaluate only frontiers shared with the status i'm receiving 
-            gbeam2_interfaces::msg::Vertex obs1 =  frontier.frontier.vertices_obstacles[0];
-            gbeam2_interfaces::msg::Vertex obs2 =  frontier.frontier.vertices_obstacles[1];
-
-            // Check it there's an intersection between two segment: 
-            // my_pos - rec_pos: the segment between the 2 robot
-            // obs1   - obs2:    the segment between the two obstacles boundary vertex.  
-
-            double t = ((my_pos.x -rec_pos.x)*(obs1.y - obs2.y) - (my_pos.y - rec_pos.y)*(obs1.x - obs2.x)==0) ? -1 : 
-                        ((my_pos.x - obs1.x)*(obs1.y - obs2.y) - (my_pos.y - obs1.y)*(obs1.x - obs2.x))
-                      / ((my_pos.x -rec_pos.x)*(obs1.y - obs2.y) - (my_pos.y - rec_pos.y)*(obs1.x - obs2.x));
-
-            double u = ((my_pos.x - rec_pos.x)*(obs1.y-obs2.y) - (my_pos.y-rec_pos.y)*(obs1.x-obs2.x)==0) ? -1 : 
-                      -((my_pos.x - rec_pos.x)*(my_pos.y - obs1.y) - (my_pos.y-rec_pos.y)*(my_pos.x - obs1.x))
-                      / ((my_pos.x - rec_pos.x)*(obs1.y-obs2.y) - (my_pos.y-rec_pos.y)*(obs1.x-obs2.x));
-            
-            if(t>=0 && t<=1 && u>=0 && u<=1)
-            {
-              new_frontier = false;
-              RCLCPP_INFO(this->get_logger(),"I've already found a frontier in my frontiers");
-            }
+          if(!is_present && frontier.type!=1){ //I need to add only SHARED frontiers
+            RCLCPP_INFO(this->get_logger(),"AND I add to mine");
+            compute_SHARED_frontier = false;
+            //add it and compute free frontiers
+            last_status[name_space_id].frontiers.push_back(frontier);
+            resulted_frontier = frontier;
+            obs_min_pair.first = frontier.frontier.vertices_obstacles[0];
+            obs_min_pair.second = frontier.frontier.vertices_obstacles[1];
+          }
+          break;
           }
         }
       }
-
-      if(!new_frontier) return; 
-      RCLCPP_INFO(this->get_logger(),"Computing a new frontier...");
       
-      //RCLCPP_INFO(this->get_logger(), "I have connection with robot %d",received_status->robot_id);
+      if(!external_frontier){
+        is_present=false;
+        for(auto& frontier:last_status[name_space_id].frontiers){
+            // It should be checking only with 
+            if(checkIntersection(my_pos,rec_pos,frontier.frontier.vertices_obstacles[0],frontier.frontier.vertices_obstacles[1]))
+            {
+              RCLCPP_INFO(this->get_logger(),"INTERSECTION: with MY frontier id: %d of %d -- TYPE: %s",frontier.id,frontier.belong_to,(frontier.type==1) ? "FREE" : "SHARED");
+              compute_SHARED_frontier = false;
+              is_present = true;
+            }
+          
+        }
+      }
+
+      if(is_present) return;
+     
+      bool has_bridge = false;
+      double dist_ij;
+      std::vector<gbeam2_interfaces::msg::Vertex> candidates_reach_nodes;
+      std::vector<gbeam2_interfaces::msg::Vertex> merged_obstacles;
+      std::vector<gbeam2_interfaces::msg::Vertex> obstacles_left;
+      std::vector<gbeam2_interfaces::msg::Vertex> obstacles_right;
+      std::vector<gbeam2_interfaces::msg::Vertex> merged_reachables;
+      std::vector<gbeam2_interfaces::msg::Vertex> inside_reachables;
+      std::vector<gbeam2_interfaces::msg::Vertex> reachables_left;
+      std::vector<gbeam2_interfaces::msg::Vertex> reachables_right;
+      std::vector<gbeam2_interfaces::msg::Vertex> obstacles_to_evaluate;
+      
+      //I need to compute shared frontiers based on the frontier i gather from other drone
+      
       gbeam2_interfaces::msg::FreePolygonStamped received_poly = get_obstacles_and_reachable_nodes(stored_Graph[received_status->robot_id]);
       gbeam2_interfaces::msg::FreePolygonStamped my_poly = get_obstacles_and_reachable_nodes(stored_Graph[name_space_id]);
 
-      //RCLCPP_INFO(this->get_logger(), "Get obstacles and reachables");
-      std::vector<gbeam2_interfaces::msg::Vertex> merged_obstacles = my_poly.polygon.vertices_obstacles;
-      std::vector<gbeam2_interfaces::msg::Vertex> obstacles_left;
-      std::vector<gbeam2_interfaces::msg::Vertex> obstacles_right;
-      std::vector<gbeam2_interfaces::msg::Vertex> merged_reachables = my_poly.polygon.vertices_reachable;
-      std::vector<gbeam2_interfaces::msg::Vertex> reachables_left;
-      std::vector<gbeam2_interfaces::msg::Vertex> reachables_right;
+      merged_obstacles = my_poly.polygon.vertices_obstacles;
+      merged_reachables = my_poly.polygon.vertices_reachable;
+
 
       merged_obstacles.insert(merged_obstacles.end(), received_poly.polygon.vertices_obstacles.begin(), received_poly.polygon.vertices_obstacles.end());
       merged_reachables.insert(merged_reachables.end(), received_poly.polygon.vertices_reachable.begin(), received_poly.polygon.vertices_reachable.end());
-      //RCLCPP_INFO(this->get_logger(), "Merged obstacles and reachables");
-      
-      for(auto node: merged_obstacles){
-        // compute value of the inequality mx-y>0, evaluated for joint vector direction
-        auto [value, is_inside] = sideOfLine(received_status->current_position.pose.pose.position,robot_odom_.pose.pose.position,node);
-        if(is_inside){
-          if(value>0) obstacles_right.push_back(node);
-          else obstacles_left.push_back(node);
-        } 
-      }
-      //RCLCPP_INFO(this->get_logger(), "Evaluate obstacles");
 
-      for(auto node: merged_reachables){
-        // compute value of the inequality mx-y>0, evaluated for joint vector direction
-        auto [value, is_inside] = sideOfLine(received_status->current_position.pose.pose.position,robot_odom_.pose.pose.position,node);
-        if(is_inside){
-          if(value>0) reachables_right.push_back(node);
-          else reachables_left.push_back(node);
-        } 
-      }
-      gbeam2_interfaces::msg::FrontierStamped resulted_frontier;
-      std::vector<gbeam2_interfaces::msg::Vertex> candidates_reach_nodes;
+      // DEBUG CLOUDPOINT 
+        // Prepare the PointCloud2 message
+        sensor_msgs::msg::PointCloud2 cloud_msg;
+        cloud_msg.header.stamp = this->now();  // Set timestamp
+        cloud_msg.header.frame_id = "world";     // Set frame ID (adjust if necessary)
 
-      std::pair<gbeam2_interfaces::msg::Vertex, gbeam2_interfaces::msg::Vertex> obs_min_pair;
-      double min_dist = INF;
-      int count_reach = 0; // How many reachables node are in between the two obstacles 
-      bool has_bridge = false;
-      double dist_ij;
+        // Reserve space for the points and the additional "side" field
+        cloud_msg.height = 1;                  // Unordered point cloud (1D array)
+        cloud_msg.is_dense = false;            // Allow for possible invalid points
+        size_t total_points = merged_obstacles.size() + merged_reachables.size();
+        cloud_msg.width = total_points;        // Number of points
 
-      for (int i = 0; i < obstacles_right.size(); i++){
-        for (int j = 0; j < obstacles_left.size(); j++){
-          dist_ij = dist(obstacles_right[i],obstacles_left[j]);
-              if(dist_ij>0.3 && dist_ij<min_dist){
-                //candidates_reach_nodes.clear();
-                has_bridge = false;
-                  for(auto reach_node : merged_reachables){
-                      int N = stored_Graph[reach_node.belong_to]->adj_matrix.size;
-                      auto start_alloc = stored_Graph[reach_node.belong_to]->adj_matrix.data.begin();
-                      auto edges_ids = std::vector<int>(start_alloc + reach_node.id * N, start_alloc + (reach_node.id + 1) * N);
-                      for(int sel_id:edges_ids){
-                        // TODO: make better condition, this doesn't work
-                        if(sel_id!=-1){ // && reach_node.belong_to!=name_space_id
-                          gbeam2_interfaces::msg::GraphEdge sel_edge = stored_Graph[reach_node.belong_to]->edges[sel_id]; 
-                          gbeam2_interfaces::msg::Vertex v1 = stored_Graph[reach_node.belong_to]->nodes[sel_edge.v1];
-                          gbeam2_interfaces::msg::Vertex v2 = stored_Graph[reach_node.belong_to]->nodes[sel_edge.v2];
+        // Define the PointCloud2 fields
+        sensor_msgs::PointCloud2Modifier modifier(cloud_msg);
+        modifier.setPointCloud2Fields(4,  // Number of fields: x, y, z, and side
+            "x", 1, sensor_msgs::msg::PointField::FLOAT32,
+            "y", 1, sensor_msgs::msg::PointField::FLOAT32,
+            "z", 1, sensor_msgs::msg::PointField::FLOAT32,
+            "side", 1, sensor_msgs::msg::PointField::INT32);  // Custom field for side (0 = left, 1 = right)
 
-                          if(checkIntersection(obstacles_right[i],obstacles_left[j],v1,v2)){
-                            has_bridge = true;
-                            break;
-                          }
-                        }
-                        
-                      }
-                      
-                      //if(has_bridge) break;
-                    
-                    
-                  }
-                  if(has_bridge){
-                    min_dist = dist_ij;
-                    resulted_frontier.frontier.vertices_reachable = candidates_reach_nodes;  
-                    obs_min_pair = std::make_pair(obstacles_right[i],obstacles_left[j]) ;
-                  }
+        modifier.resize(total_points);  // Resize the point cloud to accommodate all points
+
+        // Use iterators for better handling of PointCloud2
+        sensor_msgs::PointCloud2Iterator<float> iter_x(cloud_msg, "x");
+        sensor_msgs::PointCloud2Iterator<float> iter_y(cloud_msg, "y");
+        sensor_msgs::PointCloud2Iterator<float> iter_z(cloud_msg, "z");
+        sensor_msgs::PointCloud2Iterator<int> iter_side(cloud_msg, "side");
+
+        // Process obstacles and reachables
+        for (auto& node : merged_obstacles) {
+            auto [value, is_inside] = sideOfLine(received_status->current_position.pose.pose.position, robot_odom_.pose.pose.position, node);
+            //if (is_inside) {
+                // Fill in x, y, z for the point
+                *iter_x = node.x;
+                *iter_y = node.y;
+                *iter_z = node.z;
                 
-                }   
+                // Set "side" field (0 = left, 1 = right)
+                if (value > 0) {
+                    *iter_side = 1;  // Right side
+                    obstacles_right.push_back(node);
+                } else {
+                    *iter_side = 0;  // Left side
+                    obstacles_left.push_back(node);
+                }
+
+                // Increment iterators to the next point
+                ++iter_x;
+                ++iter_y;
+                ++iter_z;
+                ++iter_side;
+            //}
         }
-      }
-      //RCLCPP_INFO(this->get_logger(),"Best frontier obstacles node: RIGHT: id: %ld of rob: %ld, LEFT: id: %ld of rob: %ld",obs_min_pair.first.id,obs_min_pair.first.belong_to,obs_min_pair.second.id,obs_min_pair.second.belong_to);
-      
-      // I need some condition to understand if the candidate frontier has to be added 
-      // in the list of shared frontiers 
-      if (min_dist!=INF){
-        resulted_frontier.id = last_status[name_space_id].frontiers.size();
+
+        // Publish the point cloud
+        point_cloud_publisher_->publish(cloud_msg);
+        
+   
+
+      if(compute_SHARED_frontier){
+        RCLCPP_INFO(this->get_logger(),"Computing a new SHARED frontier...");
+
+        for(auto& node: merged_obstacles){
+          // compute value from the cross product evaluated for joint vector direction
+          auto [value, is_inside] = sideOfLine(received_status->current_position.pose.pose.position,robot_odom_.pose.pose.position,node);
+          if(is_inside){
+            if(value>0) obstacles_right.push_back(node);
+            else obstacles_left.push_back(node);
+          } 
+        }
+
+        for(auto& node: merged_reachables){
+          // compute value from the cross product evaluated for joint vector direction
+          auto [value, is_inside] = sideOfLine(received_status->current_position.pose.pose.position,robot_odom_.pose.pose.position,node);
+          if(is_inside){
+            inside_reachables.push_back(node);
+            if(value>0) reachables_right.push_back(node);
+            else reachables_left.push_back(node);
+          } 
+        }
+
+
+        for (int i = 0; i < obstacles_right.size(); i++){
+          for (int j = 0; j < obstacles_left.size(); j++){
+            dist_ij = dist(obstacles_right[i],obstacles_left[j]);
+                if(dist_ij>0.3 && dist_ij<min_dist){
+                  candidates_reach_nodes.clear();
+                  has_bridge = false;
+                    for(auto& reach_node : inside_reachables){
+                        int N = stored_Graph[reach_node.belong_to]->adj_matrix.size;
+                        auto start_alloc = stored_Graph[reach_node.belong_to]->adj_matrix.data.begin();
+                        auto edges_ids = std::vector<int>(start_alloc + reach_node.id * N, start_alloc + (reach_node.id + 1) * N);
+                          for(int sel_id:edges_ids){
+                            // TODO: make better condition, this doesn't work
+                            if(sel_id!=-1){ // && reach_node.belong_to!=name_space_id
+                              gbeam2_interfaces::msg::GraphEdge sel_edge = stored_Graph[reach_node.belong_to]->edges[sel_id]; 
+                              gbeam2_interfaces::msg::Vertex v1 = stored_Graph[reach_node.belong_to]->nodes[sel_edge.v1];
+                              gbeam2_interfaces::msg::Vertex v2 = stored_Graph[reach_node.belong_to]->nodes[sel_edge.v2];
+
+                              if(checkIntersection(obstacles_right[i],obstacles_left[j],v1,v2)){
+                                has_bridge = true;
+                                candidates_reach_nodes.push_back(reach_node);
+                                break;
+                              }
+                            }
+                        
+                          }
+
+                                              
+                      
+                    }
+                    if(has_bridge){
+                      min_dist = dist_ij;
+                      resulted_frontier.frontier.vertices_reachable = candidates_reach_nodes;  
+                      obs_min_pair = std::make_pair(obstacles_right[i],obstacles_left[j]) ;
+                    }
+                  
+                  }   
+          }
+        }
+
+
+          RCLCPP_INFO(this->get_logger(),"## COMPUTED SHARED FRONTIER:: pair::first (%f, %f), pair::second (%f, %f)",
+                                                                  obs_min_pair.first.x,obs_min_pair.first.y,
+                                                                  obs_min_pair.second.x, obs_min_pair.second.y );
+
+      } 
+     
+      if(min_dist!=INF){
+        resulted_frontier.id = N_my_frontiers;           N_my_frontiers++;
         resulted_frontier.shared_with = received_status->robot_id; 
         resulted_frontier.belong_to = name_space_id;
-        //resulted_frontier.header = 
+        resulted_frontier.header.stamp = this->get_clock()->now();
         resulted_frontier.is_assigned = false;
         resulted_frontier.is_explored = false;
+        // ADD the SHARED frontier
         resulted_frontier.type = 0; // 0 is SHARED, 1 FREE
-        
+      
         resulted_frontier.frontier.vertices_obstacles.push_back(obs_min_pair.first);
         resulted_frontier.frontier.vertices_obstacles.push_back(obs_min_pair.second);
 
-        //resulted_frontier.frontier.vertices_reachable = [];
-
         last_status[name_space_id].frontiers.push_back(resulted_frontier);
-
-        frontier_pub_->publish(resulted_frontier);
       }
+      else{
+        RCLCPP_INFO(this->get_logger(),"## SHARED FRONTIER:: No feasible frontier found!");
+      }
+
+      // CREATE free frontiers
+      RCLCPP_INFO(this->get_logger(),"Computing FREE frontiers for a  %s ..." , (external_frontier)? "received frontier" : "new frontier of mine");
+      obstacles_left.clear();
+      obstacles_right.clear();
+      reachables_left.clear();
+      reachables_right.clear();
+      bool CCW = true;
+
+      gbeam2_interfaces::msg::Vertex dummy_vert;
+      tf2::Quaternion rotation;
+      tf2::Vector3 v_start_temp;
+      tf2::Vector3 v_start(obs_min_pair.first.x - my_pos.x, obs_min_pair.first.y - my_pos.y, 0);
+      tf2::Vector3 v_end(obs_min_pair.second.x - my_pos.x, obs_min_pair.second.y - my_pos.y, 0);
+      double span = wifi_range;//dist(obs_min_pair.first,my_pos); 
+
+      gbeam2_interfaces::msg::FrontierStamped resulted_FREE_frontier;
+      std::pair<gbeam2_interfaces::msg::Vertex, gbeam2_interfaces::msg::Vertex> FREE_obs_min_pair;
+      gbeam2_interfaces::msg::Vertex start_node = obs_min_pair.first;
+      gbeam2_interfaces::msg::Vertex end_node = obs_min_pair.second;
+      gbeam2_interfaces::msg::Vertex last_node = obs_min_pair.first;
+      
+      double FREE_min_dist = INF;
+      double angle_tot_rotation = 0;
+      int count=0;
+      int count2=0;
+
+      RCLCPP_INFO(this->get_logger(), "START:: odom: (%f, %f)",my_pos.x,my_pos.y);
+      RCLCPP_INFO(this->get_logger(), "START:: v_start: (%f, %f), v_end: (%f, %f)", v_start.x(), v_start.y(), v_end.x(), v_end.y());
+
+      // Rotate the vector by a small angle (e.g., 5 degrees)
+      double angle = 10.0 * M_PI / 180.0; // 5 degrees in radians
+      
+      rotation.setRPY(0, 0, angle); // Rotate around Z-axis
+      v_start = tf2::quatRotate(rotation, v_start);
+      angle_tot_rotation+= angle;
+      // Normalize the vector
+      //v_start.normalize();
+
+
+      // Calculate the position of the dummy vertex
+      dummy_vert.x = my_pos.x + span * v_start.x();
+      dummy_vert.y = my_pos.y + span * v_start.y();
+      if(checkIntersection(dummy_vert, my_pos,start_node,end_node)){
+
+        // Rotate the vector by a small angle (e.g., 5 degrees)
+    
+        rotation.setRPY(0, 0, -2*angle); // Rotate around Z-axis
+        v_start = tf2::quatRotate(rotation, v_start);
+        angle_tot_rotation+= angle;
+
+        // Normalize the vector
+        //v_start.normalize();
+
+
+        // Calculate the position of the dummy vertex
+        dummy_vert.x = my_pos.x + span * v_start.x();
+        dummy_vert.y = my_pos.y + span * v_start.y();
+        CCW=false;
+        RCLCPP_INFO(this->get_logger(),"Clockwise Cycle");
+      };
+
+        
+
+        while(cos(v_start.angle(v_end))<0.8 && count<5){
+          RCLCPP_INFO(this->get_logger(),"## COSINE:: %f:: ANGLE: (%f)",cos(v_start.angle(v_end)),v_start.angle(v_end)*180/M_PI);
+          RCLCPP_INFO(this->get_logger(),"## RESTART:: %d:: dummy_vert: (%f, %f)",count,dummy_vert.x,dummy_vert.y);
+          obstacles_left.clear();
+          obstacles_right.clear();
+          reachables_left.clear();
+          reachables_right.clear(); 
+          FREE_min_dist = INF;
+          resulted_FREE_frontier.frontier.vertices_obstacles.clear();
+
+
+          while (FREE_min_dist==INF && count<10)
+          {
+            for(auto& node: merged_obstacles){
+            // compute value of the inequality mx-y>0, evaluated for joint vector direction
+            auto [value, is_inside] = sideOfLine(dummy_vert,my_pos,node);
+              if(is_inside){
+                if(value>0){
+                  obstacles_right.push_back(node);
+                  if(node.id == last_node.id && node.belong_to==node.belong_to) obstacles_to_evaluate = obstacles_left;
+                }            
+                else{
+                  obstacles_left.push_back(node);
+                  if(node.id == last_node.id && node.belong_to==node.belong_to) obstacles_to_evaluate = obstacles_right;
+                } 
+                if (node.id == obs_min_pair.second.id && node.belong_to == obs_min_pair.second.belong_to)
+                {
+                  if(count>0) RCLCPP_INFO(this->get_logger(),"## CONDITION:: end_node is inside!");
+                }
+                
+              } 
+            }
+            //RCLCPP_INFO(this->get_logger(),"## CONDITION:: %d:: (last_node_value>0): %s",count,(last_node_value>0) ? "LEFT" : "RIGHT");
+            RCLCPP_INFO(this->get_logger(),"## CONDITION:: %d:: obstacles_left: %d  obstacles_right: %d",count,obstacles_left.size(), obstacles_right.size());
+            for (int i = 0; i < obstacles_to_evaluate.size(); i++){
+              dist_ij = dist(last_node,obstacles_to_evaluate[i]);
+                if(dist_ij>0.3 && dist_ij<FREE_min_dist){
+                  candidates_reach_nodes.clear();
+                  for(auto& reach_node : merged_reachables){
+
+                    //auto [value, is_inside_line] = sideOfLine(last_node,obstacles_to_evaluate[i],reach_node);
+                    bool is_insideEllipse = Ellipse(last_node,obstacles_to_evaluate[i],elipse_scaling_obs*dist_ij).isInside(reach_node);
+                    if(is_insideEllipse){ //
+                      candidates_reach_nodes.push_back(reach_node);
+                    }  
+
+
+                    if(candidates_reach_nodes.size()>0){
+                      FREE_min_dist = dist_ij;
+                      resulted_frontier.frontier.vertices_reachable = candidates_reach_nodes;  
+                      FREE_obs_min_pair = std::make_pair(last_node,obstacles_to_evaluate[i]) ;
+                    }
+                  
+                  } 
+                }            
+              }
+              // Rotate the vector by a small angle (e.g., 5 degrees)
+              rotation.setRPY(0, 0, (CCW) ? angle: -angle); // Rotate around Z-axis
+              v_start = tf2::quatRotate(rotation, v_start);
+              angle_tot_rotation+= angle;
+              
+              // Normalize the updated vector
+              //v_start.normalize();
+
+              // Calculate the position of the dummy vertex
+              dummy_vert.x = my_pos.x + span * v_start.x();
+              dummy_vert.y = my_pos.y + span * v_start.y();
+
+              count2++;
+          }
+          
+
+
+          RCLCPP_INFO(this->get_logger(),"## FREE FRONTIER:: %d:: FREE_min_dist %f",count , FREE_min_dist);
+          RCLCPP_INFO(this->get_logger(),"## FREE FRONTIER:: %d:: pair::first (%f, %f), pair::second (%f, %f)",count,
+                                                                  FREE_obs_min_pair.first.x,FREE_obs_min_pair.first.y,
+                                                                  FREE_obs_min_pair.second.x, FREE_obs_min_pair.second.y );
+          last_node = FREE_obs_min_pair.second;
+
+          // Update v_start based on the new FREE_obs_min_pair.second
+          v_start_temp = tf2::Vector3(last_node.x - my_pos.x,last_node.y - my_pos.y,0);
+          angle_tot_rotation+=v_start_temp.angle(v_start);
+          v_start = v_start_temp;
+
+          if(cos(v_start.angle(v_end))>=0.8){
+            RCLCPP_INFO(this->get_logger(),"Vector equal!");
+            FREE_obs_min_pair.second = obs_min_pair.second;
+          }else{
+            // Rotate the vector by a small angle (e.g., 5 degrees)
+            rotation.setRPY(0, 0, (CCW) ? angle: -angle); // Rotate around Z-axis
+            v_start = tf2::quatRotate(rotation, v_start);
+            angle_tot_rotation+= angle;
+            // Normalize the updated vector
+            //v_start.normalize();
+
+            // Calculate the position of the dummy vertex
+            dummy_vert.x = my_pos.x + span * v_start.x();
+            dummy_vert.y = my_pos.y + span * v_start.y();
+          }
+          RCLCPP_INFO(this->get_logger(), "END:: v_start: (%f, %f), v_end: (%f, %f)", v_start.x(), v_start.y(), v_end.x(), v_end.y());
+
+          resulted_FREE_frontier.type = 1; // 0 is SHARED, 1 FREE
+          resulted_FREE_frontier.id = N_my_frontiers; N_my_frontiers++; 
+          resulted_FREE_frontier.shared_with = received_status->robot_id; 
+          resulted_FREE_frontier.belong_to = name_space_id;
+          resulted_FREE_frontier.is_assigned = false;
+          resulted_FREE_frontier.is_explored = false;
+          resulted_FREE_frontier.frontier.vertices_obstacles.push_back(FREE_obs_min_pair.first);
+          resulted_FREE_frontier.frontier.vertices_obstacles.push_back(FREE_obs_min_pair.second);
+          last_status[name_space_id].frontiers.push_back(resulted_FREE_frontier);
+          res_frontier_array.frontiers.push_back(resulted_FREE_frontier);
+    
+
+          count++;
+          RCLCPP_INFO(this->get_logger(),"Tot angle of rotation: %f",angle_tot_rotation*180/M_PI);
+        }
+
+        RCLCPP_INFO(this->get_logger(),"N of my frontiers: %d",N_my_frontiers);
+        res_frontier_array.frontiers = last_status[name_space_id].frontiers;
+        frontier_pub_->publish(res_frontier_array);
+
+        
+
+        
+      
 
       
 

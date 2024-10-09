@@ -20,6 +20,7 @@
 
 #include "gbeam2_interfaces/msg/status.hpp"
 #include "gbeam2_interfaces/msg/frontier_stamped.hpp"
+#include "gbeam2_interfaces/msg/frontier_stamped_array.hpp"
 #include "library_fcn.hpp"
 
 class StatusTXNode : public rclcpp::Node
@@ -47,7 +48,7 @@ public:
             std::bind(&StatusTXNode::statusCallback, this, std::placeholders::_1),//);
             options);
 
-  frontier_sub_ = this->create_subscription<gbeam2_interfaces::msg::FrontierStamped>("frontier", 1,
+  frontier_sub_ = this->create_subscription<gbeam2_interfaces::msg::FrontierStampedArray>("frontier", 1,
             std::bind(&StatusTXNode::frontierCallback, this, std::placeholders::_1));
   
 
@@ -76,6 +77,7 @@ public:
      curr_status[i].connection_status.resize(N_robot);
      curr_status[i].joint_vector.resize(N_robot);
      curr_status[i].normal_joint_vector.resize(N_robot);
+     curr_status[i].frontiers.clear();
   }
 
  
@@ -94,14 +96,14 @@ private:
   rclcpp::Subscription<gbeam2_interfaces::msg::Status>::SharedPtr status_sub_; 
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subscriber_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr ref_pos_subscriber_;
-  rclcpp::Subscription<gbeam2_interfaces::msg::FrontierStamped>::SharedPtr frontier_sub_;
+  rclcpp::Subscription<gbeam2_interfaces::msg::FrontierStampedArray>::SharedPtr frontier_sub_;
 
   rclcpp::TimerBase::SharedPtr timer_;
 
   nav_msgs::msg::Odometry robot_odom_;
   geometry_msgs::msg::PoseStamped target_pos_;
   std::vector<gbeam2_interfaces::msg::Status> curr_status;
-  gbeam2_interfaces::msg::FrontierStamped last_received_frontier;
+  gbeam2_interfaces::msg::FrontierStampedArray last_rec;
   double deg_90 = M_PI / 2.0;
 
   void odomCallback(const nav_msgs::msg::Odometry::SharedPtr odom_ptr)
@@ -122,15 +124,11 @@ private:
     curr_status[received_status->robot_id]=*received_status;
   }
 
-  void frontierCallback(const gbeam2_interfaces::msg::FrontierStamped::SharedPtr received_frontier){
-    last_received_frontier=*received_frontier;
-    for (int i = 0; i < curr_status[name_space_id].frontiers.size(); i++)
-    {
-      if(last_received_frontier.belong_to==curr_status[name_space_id].frontiers[i].belong_to && last_received_frontier.id==curr_status[name_space_id].frontiers[i].id) return;
-    }
+void frontierCallback(const gbeam2_interfaces::msg::FrontierStampedArray::SharedPtr received_frontiers) {
+    last_rec = *received_frontiers;
 
-    curr_status[name_space_id].frontiers.push_back(last_received_frontier);   
-  }
+    curr_status[name_space_id].frontiers = last_rec.frontiers;
+}
 
   void statusloop(){
     curr_status[name_space_id].current_position.header = robot_odom_.header;

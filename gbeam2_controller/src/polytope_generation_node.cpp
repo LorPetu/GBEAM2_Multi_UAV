@@ -92,6 +92,7 @@ private:
   double start_dist ;
   double update_freq ;
   float obst_dist_min; 
+  double offset_angle=0;
 
   std::string name_space;
   int name_space_id;
@@ -172,11 +173,14 @@ private:
 
         for(int v=0; v<num_vertices; v++)
           {
-            float vert_angle = v*angle_diff_vert + angle_diff_vert/2;
+            float vert_angle = v*angle_diff_vert + angle_diff_vert/2 + offset_angle;
             vert_directions[v].x = cos(vert_angle);
             vert_directions[v].y = sin(vert_angle);
             vert_directions[v].z = 0;
           }
+        
+        offset_angle+=10;
+        if(offset_angle==360) offset_angle=0;
       //-------------------------------------------------------------------------------------------------
 
 

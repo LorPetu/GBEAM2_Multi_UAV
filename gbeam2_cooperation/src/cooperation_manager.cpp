@@ -34,6 +34,14 @@
 #include <sensor_msgs/point_cloud2_iterator.hpp> // For easier point cloud population
 
 #define INF 100000
+typedef gbeam2_interfaces::msg::Vertex Vertex; 
+
+// Struct to store vertex and its corresponding distance and angle
+struct VertexInfo {
+    gbeam2_interfaces::msg::Vertex vertex;
+    double distance;
+    double angle;
+};
 
 class Ellipse {
   private:
@@ -131,13 +139,16 @@ public:
     frontier_pub_ = this->create_publisher<gbeam2_interfaces::msg::FrontierStampedArray>(
       "frontier",1);
 
-     start_frontiers_service_ = this->create_service<std_srvs::srv::SetBool>(
-        "start_frontier",std::bind(&CooperationNode::startFrontier,this, std::placeholders::_1, std::placeholders::_2));
+    start_frontiers_service_ = this->create_service<std_srvs::srv::SetBool>(
+      "start_frontier",std::bind(&CooperationNode::startFrontier,this, std::placeholders::_1, std::placeholders::_2));
 
-      point_cloud_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
-        "merged_obstacles",1);
+    point_cloud_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
+      "merged_obstacles",1);
 
-     // Initialize parameters
+    timer_ = this->create_wall_timer(std::chrono::milliseconds(2000), std::bind(&CooperationNode::generateVisibilityPol, this));
+
+
+    // Initialize parameters
     this->declare_parameter<int>("N_robot",0);
     this->declare_parameter<double>("communication_range",0.0);
     this->declare_parameter<double>("elipse_scaling_obs",0.0);
@@ -204,6 +215,7 @@ private:
   std::vector<gbeam2_interfaces::msg::Vertex> reachables_left;
   std::vector<gbeam2_interfaces::msg::Vertex> reachables_right;
   std::vector<gbeam2_interfaces::msg::Vertex> obstacles_to_evaluate;
+  std::vector<gbeam2_interfaces::msg::FreePolygon> voronoi_tiles;
 
 
   std::vector<gbeam2_interfaces::msg::Status> last_status;
@@ -225,6 +237,8 @@ private:
   rclcpp::Publisher<gbeam2_interfaces::msg::Graph>::SharedPtr assigned_graph_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr point_cloud_publisher_;
 
+  rclcpp::TimerBase::SharedPtr timer_;
+
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr  start_frontiers_service_;
 
   double deg_90 = M_PI / 2.0;
@@ -233,6 +247,33 @@ private:
 
   void startFrontier(const std::shared_ptr<std_srvs::srv::SetBool::Request> request, std::shared_ptr<std_srvs::srv::SetBool::Response> response){
       start_frontier=request->data;     
+  }
+
+  std::pair<bool,Vertex> checkAndgetIntersection(Vertex p1,Vertex p2,Vertex p3,Vertex p4){
+    // Check it there's an intersection between two segment: 
+    // p1 - rec_pos: the segment between the 2 robot
+    // p3   - p4:    the segment between the two obstacles boundary vertex.  
+    Vertex intersection;
+
+    double t = ((p1.x -p2.x)*(p3.y - p4.y) - (p1.y - p2.y)*(p3.x - p4.x)==0) ? -1 : 
+                ((p1.x - p3.x)*(p3.y - p4.y) - (p1.y - p3.y)*(p3.x - p4.x))
+              / ((p1.x -p2.x)*(p3.y - p4.y) - (p1.y - p2.y)*(p3.x - p4.x));
+
+    double u = ((p1.x - p2.x)*(p3.y-p4.y) - (p1.y-p2.y)*(p3.x-p4.x)==0) ? -1 : 
+              -((p1.x - p2.x)*(p1.y - p3.y) - (p1.y-p2.y)*(p1.x - p3.x))
+              / ((p1.x - p2.x)*(p3.y-p4.y) - (p1.y-p2.y)*(p3.x-p4.x));
+
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+        intersection.x = p1.x + t * (p2.x-p1.x);
+        intersection.y = p1.y + t * (p2.y-p1.y);
+        return std::make_pair(true,intersection);
+    }
+    else{
+      return std::make_pair(false,intersection);
+    }
+
+    
+
   }
 
   bool checkIntersection(gbeam2_interfaces::msg::Vertex p1,gbeam2_interfaces::msg::Vertex p2,gbeam2_interfaces::msg::Vertex p3,gbeam2_interfaces::msg::Vertex p4){
@@ -430,9 +471,11 @@ private:
       merged_obstacles = my_poly.polygon.vertices_obstacles;
       merged_reachables = my_poly.polygon.vertices_reachable;
 
-
-      merged_obstacles.insert(merged_obstacles.end(), received_poly.polygon.vertices_obstacles.begin(), received_poly.polygon.vertices_obstacles.end());
-      merged_reachables.insert(merged_reachables.end(), received_poly.polygon.vertices_reachable.begin(), received_poly.polygon.vertices_reachable.end());
+      if(robot_id!=name_space_id){
+        merged_obstacles.insert(merged_obstacles.end(), received_poly.polygon.vertices_obstacles.begin(), received_poly.polygon.vertices_obstacles.end());
+        merged_reachables.insert(merged_reachables.end(), received_poly.polygon.vertices_reachable.begin(), received_poly.polygon.vertices_reachable.end());
+      }
+      
 
   }
 
@@ -719,6 +762,95 @@ private:
       }
   }
 
+  gbeam2_interfaces::msg::FreePolygon computeVisibilityPol(const Vertex my_pos_vert, const double max_range){
+
+    double dist_from;
+    gbeam2_interfaces::msg::FreePolygon visibilityPolygon;
+    std::vector<VertexInfo> filtered_obstacles;
+    std::vector<std::pair<Vertex,Vertex>> T_segments;
+    // Cluster point in max range and get all distances
+    for (auto& obs_vert:merged_obstacles)
+    {
+      dist_from = dist(my_pos_vert,obs_vert);
+      if(dist_from<max_range){
+        VertexInfo info;
+        info.vertex   = obs_vert;
+        info.distance = dist_from;
+        info.angle    = atan2((obs_vert.y -my_pos_vert.y),(obs_vert.x -my_pos_vert.x));
+        filtered_obstacles.push_back(info);
+      }
+      
+    }
+
+    // Sort the filtered vertices by angle
+    std::sort(filtered_obstacles.begin(), filtered_obstacles.end(),
+              [](const VertexInfo& a, const VertexInfo& b) {
+                  return a.angle < b.angle;
+              });
+
+    for(int i=0; i<filtered_obstacles.size(); i++){
+      const Vertex& p = filtered_obstacles[i].vertex;
+
+      //Find visible point
+      Vertex visiblePoint = p;
+      for (auto& segment : T_segments) {
+        auto [intersect,intersection] = checkAndgetIntersection(my_pos_vert,p,segment.first,segment.second);
+        if (intersect) {
+          auto [value, is_inside] = sideOfLine(my_pos_vert,intersection,p);
+            if (value > 0) {
+                visiblePoint = intersection;
+            }
+        }
+      }
+
+      visibilityPolygon.vertices_obstacles.push_back(visiblePoint);
+
+
+      // Update active segments
+      size_t prev = (i + filtered_obstacles.size() - 1) % filtered_obstacles.size();
+      size_t next = (i + 1) % filtered_obstacles.size();
+
+      std::pair<Vertex,Vertex> prevSegment = std::make_pair(filtered_obstacles[prev].vertex,p);
+      std::pair<Vertex,Vertex> nextSegment = std::make_pair(p,filtered_obstacles[next].vertex);
+
+      double crossPrev = sideOfLine(my_pos_vert,filtered_obstacles[prev].vertex,p).first;
+      double crossNext = sideOfLine(my_pos_vert,p,filtered_obstacles[prev].vertex).first;
+
+      if (crossPrev < 0) {
+        // Segment is facing towards q, so it should be in the set
+        if (std::find(T_segments.begin(), T_segments.end(), prevSegment) == T_segments.end()) {
+            T_segments.push_back(prevSegment);
+        }
+      } else if (crossPrev > 0) {
+          // Segment is facing away from q, so it should not be in the set
+          auto it = std::find(T_segments.begin(), T_segments.end(), prevSegment);
+          if (it != T_segments.end()) {
+              T_segments.erase(it);
+          }
+      }
+
+      // Handle the next segment
+      if (crossNext < 0) {
+          // Segment is facing towards q, so it should be in the set
+          if (std::find(T_segments.begin(), T_segments.end(), nextSegment) == T_segments.end()) {
+              T_segments.push_back(nextSegment);
+          }
+      } else if (crossNext > 0) {
+          // Segment is facing away from q, so it should not be in the set
+          auto it = std::find(T_segments.begin(), T_segments.end(), nextSegment);
+          if (it != T_segments.end()) {
+              T_segments.erase(it);
+          }
+      }
+
+
+
+    }
+
+    return visibilityPolygon;
+
+  }
+
   void statusCallback(const gbeam2_interfaces::msg::Status::SharedPtr received_status){
     last_status[received_status->robot_id]=*received_status;
     if(!start_frontier) return;
@@ -794,6 +926,45 @@ private:
     }
   }
 
+  void generateVisibilityPol(){
+    auto my_pos = robot_odom_.pose.pose.position; // Odom position of the robot itself  
+    gbeam2_interfaces::msg::Vertex my_pos_vert; my_pos_vert.x =my_pos.x; my_pos_vert.y =my_pos.y; //Vertex position of the robot
+    bool is_inside =false;
+    for(auto& tile:voronoi_tiles){
+      if(isInsideObstacles(tile,my_pos_vert)) is_inside=true;
+    }
+
+    if(!is_inside){
+      updateMergedNodes(0);
+      gbeam2_interfaces::msg::FreePolygon visibility_pol = computeVisibilityPol(my_pos_vert,wifi_range);
+      voronoi_tiles.push_back(visibility_pol);
+      for (int i =0; i<visibility_pol.vertices_obstacles.size(); i++)
+      {
+        Vertex vert = visibility_pol.vertices_obstacles[i];
+        Vertex next_vert = (i+1<visibility_pol.vertices_obstacles.size())? visibility_pol.vertices_obstacles[i+1] : visibility_pol.vertices_obstacles[0];
+
+        gbeam2_interfaces::msg::FrontierStamped resulted_FREE_frontier;
+
+        resulted_FREE_frontier.type = 1; // 0 is SHARED, 1 FREE
+        resulted_FREE_frontier.id = N_my_frontiers; N_my_frontiers++; 
+        //resulted_FREE_frontier.shared_with = SHARED_frontier.shared_with; 
+        resulted_FREE_frontier.belong_to = name_space_id;
+        resulted_FREE_frontier.is_assigned = false;
+        resulted_FREE_frontier.is_explored = false;
+        resulted_FREE_frontier.frontier.vertices_obstacles.push_back(vert);
+        resulted_FREE_frontier.frontier.vertices_obstacles.push_back(next_vert);
+        last_status[name_space_id].frontiers.push_back(resulted_FREE_frontier);
+        res_frontier_array.frontiers.push_back(resulted_FREE_frontier);
+
+      }
+        
+      RCLCPP_INFO(this->get_logger(),"N of my frontiers: %d",N_my_frontiers);
+      res_frontier_array.frontiers = last_status[name_space_id].frontiers;
+      frontier_pub_->publish(res_frontier_array);
+    }
+  }
+    
+    
 };
 
 

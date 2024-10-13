@@ -687,9 +687,6 @@ gbeam2_interfaces::msg::GraphEdge computeEdge(gbeam2_interfaces::msg::Vertex ver
   else
     edge.is_boundary = false;
   edge.is_walkable = false; //set non walkable as default
-  
-  vert1.neighbors.push_back(vert2.id);
-  vert2.neighbors.push_back(vert1.id);
 
   return edge;
 }

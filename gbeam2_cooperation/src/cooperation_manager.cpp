@@ -931,7 +931,7 @@ private:
     gbeam2_interfaces::msg::Vertex my_pos_vert; my_pos_vert.x =my_pos.x; my_pos_vert.y =my_pos.y; //Vertex position of the robot
     bool is_inside =false;
     for(auto& tile:voronoi_tiles){
-      if(isInsideObstacles(tile,my_pos_vert)) is_inside=true;
+      if(isInside(freePolyObstacles2poly(tile),vertex2point32(my_pos_vert))) is_inside=true;
     }
 
     if(!is_inside){

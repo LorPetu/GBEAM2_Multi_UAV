@@ -201,6 +201,7 @@ private:
         {
             //RCLCPP_INFO(this->get_logger(),"entrato nel primo for -------> ");
             gbeam2_interfaces::msg::Vertex vert = poly_ptr->polygon.vertices_reachable[i];  //get vertex from polytope
+            vert.belong_to = name_space_id;
             vert = vert_transform(vert, l2g_tf); //change coordinates to global position
 
             float vert_dist = vert_graph_distance_noobstacle(graph, vert);
@@ -240,6 +241,7 @@ private:
         for (int i=0; i<poly_ptr->polygon.vertices_obstacles.size(); i++)
         {
             gbeam2_interfaces::msg::Vertex vert = poly_ptr->polygon.vertices_obstacles[i];  //get vertex from polytope
+            vert.belong_to = name_space_id;
             vert = vert_transform(vert, l2g_tf); //change coordinates to global position
 
             vert = moveAway(vert, obstacle_margin);
@@ -287,47 +289,80 @@ private:
         gbeam2_interfaces::msg::FreePolygon polyGlobal = poly_transform(poly_ptr->polygon, l2g_tf);
 
         //create vectors with indices of vertices inside polytopes
-        std::vector<int> inObstaclesId;
+        std::vector<int> inReachableId;
+        std::vector<int> inObstacleNotReachableId;
         for (int i=0; i<graph.nodes.size(); i++)
-            if (isInsideReachable(polyGlobal, graph.nodes[i])) //CAMBIATO QUA IMPORTANTE
-            inObstaclesId.push_back(i);
+            if(isInsideObstacles(polyGlobal,graph.nodes[i])){
+                if (isInsideReachable(polyGlobal, graph.nodes[i])){
+                    inReachableId.push_back(i);
+                }else{
+                    if(graph.nodes[i].is_obstacle) inObstacleNotReachableId.push_back(i);
+                }
+            }
+            
 
-        /*std::string obstacle_string;
-        for (int node : inObstaclesId) {
-        obstacle_string += std::to_string(node) + "-";
-        }
-        //RCLCPP_INFO(this->get_logger(),"inObstacleId: %s",obstacle_string.c_str());*/
-        // create edges between nodes inside poly_obstacles
-        for (int i=0; i<inObstaclesId.size(); i++)
-        {
-            //RCLCPP_INFO(this->get_logger()," -------> entra nel primo for (ADD GRAPH EDGES)");
-            for (int j=i+1; j<inObstaclesId.size(); j++)
+        
+        for (int i=0; i<inReachableId.size(); i++)
+        { 
+            for (int j=i+1; j<inReachableId.size(); j++)
             {
-            if (new_adj_matrix[inObstaclesId[i]][inObstaclesId[j]] == -1) // if edge not already present
+            if (new_adj_matrix[inReachableId[i]][inReachableId[j]] == -1) 
             {
-                //RCLCPP_INFO(this->get_logger()," -------> entra nel primo if (ADD GRAPH EDGES)");
                 //then add edge i-j to graph
-                gbeam2_interfaces::msg::GraphEdge edge = computeEdge(graph.nodes[inObstaclesId[i]], graph.nodes[inObstaclesId[j]], node_bound_dist);
+                gbeam2_interfaces::msg::Vertex& node_i = graph.nodes[inReachableId[i]];
+                gbeam2_interfaces::msg::Vertex& node_j = graph.nodes[inReachableId[j]]; 
+                gbeam2_interfaces::msg::GraphEdge edge = computeEdge(node_i, node_j, node_bound_dist);
                 edge.id = graph.edges.size();
-                if(isInsideReachable(polyGlobal, graph.nodes[i]) && isInsideReachable(polyGlobal, graph.nodes[j]))
+                if(isInsideReachable(polyGlobal, node_i) && isInsideReachable(polyGlobal, node_j))
                 edge.is_walkable = true;  // if both vertices are inside reachable poly, then the edge is walkable
                 graph.edges.push_back(edge);
 
                 //update adjacency matrix
-                new_adj_matrix[inObstaclesId[i]][inObstaclesId[j]] = edge.id;
-                new_adj_matrix[inObstaclesId[j]][inObstaclesId[i]] = edge.id;
+                new_adj_matrix[inReachableId[i]][inReachableId[j]] = edge.id;
+                new_adj_matrix[inReachableId[j]][inReachableId[i]] = edge.id;
+                node_i.neighbors.push_back(node_j.id);
+                node_j.neighbors.push_back(node_i.id);
 
                 is_changed = true;
             }
             else  // if edge is present, check if it is walkable
             {
                 //RCLCPP_INFO(this->get_logger()," -------> entra nell'else del secondo if (ADD GRAPH EDGES)");
-                int e = new_adj_matrix[inObstaclesId[i]][inObstaclesId[j]];
+                int e = new_adj_matrix[inReachableId[i]][inReachableId[j]];
                 if(isInsideReachable(polyGlobal, graph.nodes[graph.edges[e].v1]) && isInsideReachable(polyGlobal, graph.nodes[graph.edges[e].v2]))
                 graph.edges[e].is_walkable = true;
             }
             }
         }
+
+        for (int i=0; i<inObstacleNotReachableId.size(); i++)
+        {
+           for (int j=i+1; j<inObstacleNotReachableId.size(); j++)
+            {
+               if (new_adj_matrix[inObstacleNotReachableId[i]][inObstacleNotReachableId[j]] == -1) 
+                { 
+                    //then add edge i-j to graph
+                    gbeam2_interfaces::msg::Vertex& obs_i = graph.nodes[inObstacleNotReachableId[i]];
+                    gbeam2_interfaces::msg::Vertex& obs_j = graph.nodes[inObstacleNotReachableId[j]]; 
+                    gbeam2_interfaces::msg::GraphEdge edge = computeEdge(obs_i, obs_j, node_bound_dist);
+                    edge.id = graph.edges.size();
+                    if(edge.is_boundary && obs_i.neighbors.size()<2 && obs_j.neighbors.size()<2){
+
+                        graph.edges.push_back(edge);
+
+                        //update adjacency matrix
+                        new_adj_matrix[inObstacleNotReachableId[i]][inObstacleNotReachableId[j]] = edge.id;
+                        new_adj_matrix[inObstacleNotReachableId[j]][inObstacleNotReachableId[i]] = edge.id;
+                        obs_i.neighbors.push_back(obs_j.id);
+                        obs_j.neighbors.push_back(obs_i.id);
+
+                        is_changed = true;
+                    } 
+
+                }
+            }
+        }
+        
 
         graph.adj_matrix=matrix2GraphAdj(new_adj_matrix);
 
